@@ -1,9 +1,27 @@
 const $=s=>document.querySelector(s),button=$('#start'),status=$('#status'),debug=$('#debug'),scoreEl=$('#score');
-const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,key:'ArrowRight'},{name:'back',x:0,z:1,key:'ArrowDown'},{name:'left',x:-1,z:0,key:'ArrowLeft'}];
+const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,key:'ArrowRight'},{name:'left',x:-1,z:0,key:'ArrowLeft'}];
 let gameOver=false,tickleUntil=0,tickleNext=0;
-const recordedDuckFiles={front:'Duck_Up.wav',back:'Duck_Down.wav',left:'Duck_Left.wav',right:'Duck_Right.wav'};
+const recordedDuckFiles={front:'Duck_Up.wav',left:'Duck_Left.wav',right:'Duck_Right.wav'};
 const recordedDucks={};let recordedDuckSource=null,recordedDuckGain=null;
-async function loadRecordedDucks(){await Promise.all(Object.entries(recordedDuckFiles).map(async ([direction,file])=>{try{const response=await fetch('./audio/'+file);if(!response.ok)throw Error(response.status);recordedDucks[direction]=await ctx.decodeAudioData(await response.arrayBuffer());}catch(e){console.warn('Recorded duck unavailable:',file,e);}}));}
+let ballBounce;
+async function loadAudioFile(file){
+ try{
+  const response=await fetch('./audio/'+file);
+  if(!response.ok)throw Error(response.status);
+  return await ctx.decodeAudioData(await response.arrayBuffer());
+ }catch(error){
+  console.warn('Audio unavailable:',file,error);
+  return null;
+ }
+}
+async function loadGameAudio(){
+ await Promise.all([
+  ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
+   recordedDucks[direction]=await loadAudioFile(file);
+  }),
+  loadAudioFile('Ball_Bounce.wav').then(buffer=>{ballBounce=buffer;})
+ ]);
+}
 function stopRecordedDuck(){if(recordedDuckSource){try{recordedDuckSource.stop();}catch(e){}recordedDuckSource.disconnect();recordedDuckSource=null;}if(recordedDuckGain){recordedDuckGain.disconnect();recordedDuckGain=null;}}
 function startRecordedDuck(d,approachDuration){stopRecordedDuck();const buffer=recordedDucks[d.name];if(!buffer)return false;const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=buffer;source.loop=false;gain.gain.value=.95;source.connect(gain).connect(master);source.start(0,Math.max(0,buffer.duration-approachDuration));recordedDuckSource=source;recordedDuckGain=gain;source.onended=()=>{if(recordedDuckSource===source){recordedDuckSource=null;recordedDuckGain=null;}source.disconnect();gain.disconnect();};return true;}
 let ctx,master,roomSend,playing=false,duck=null,balls=[],nextDuckAt=0,last=0,score=0,round=0,duckPanner,duckFilter,duckGain,duckDirect,duckRearSend,duckRearDelay,duckRearFilter,duckNotch,duckPresence,duckFrontReflection,duckBackReflection;
@@ -16,6 +34,19 @@ const duckVoices=[
  {name:'Bloop',base:185,formant:1.65,wobble:11,chirp:.72,tempo:1.3},
  {name:'Noodle',base:275,formant:2.15,wobble:28,chirp:1.15,tempo:1.05}
 ];
+function bounce(at,p,volume){
+ if(!ballBounce){
+  sound('bounce',at,p,volume);
+  return;
+ }
+ const source=ctx.createBufferSource(),gain=ctx.createGain();
+ source.buffer=ballBounce;
+ source.playbackRate.value=rand(.93,1.07);
+ gain.gain.value=volume;
+ source.connect(gain).connect(p);
+ source.onended=()=>{source.disconnect();gain.disconnect();};
+ source.start(at);
+}
 function sound(type,at,p,volume=1,voice=duckVoices[0]){
  // Cartoon gestures are built as two articulated syllables rather than a sustained beep.
  const isDuck=type==='quack'||type==='retreat';
@@ -102,19 +133,56 @@ for(const [send,delayTime,cutoff,pan] of [[duckFrontReflection,.022,7200,-.35],[
  duckPanner.connect(send).connect(delay).connect(tone).connect(stereo).connect(master);
 }
 duckPanner.connect(duckRearSend).connect(duckRearDelay).connect(duckRearFilter).connect(master);
-const bed=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),bd=bed.getChannelData(0);let smooth=0;for(let i=0;i<bd.length;i++){smooth=.996*smooth+.004*(Math.random()*2-1);bd[i]=smooth;}const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),g=ctx.createGain();filter.type='lowpass';filter.frequency.value=280;g.gain.value=.032;src.buffer=bed;src.loop=true;src.connect(filter).connect(g).connect(master);src.start();}
+startNightAmbience();
+}
+function startNightAmbience(){
+ const duration=18,rate=ctx.sampleRate;
+ const bed=ctx.createBuffer(2,duration*rate,rate);
+ for(let channel=0;channel<2;channel++){
+  const data=bed.getChannelData(channel);
+  let wind=0,rustle=0;
+  for(let i=0;i<data.length;i++){
+   const t=i/rate;
+   const noise=Math.random()*2-1;
+   wind=.998*wind+.002*noise;
+   rustle=.89*rustle+.11*noise;
+   const gust=.4+.3*Math.sin(2*Math.PI*t/6+channel)+.18*Math.sin(2*Math.PI*t/9);
+   const edge=Math.min(1, t*8, (duration-t)*8);
+   data[i]=edge*(wind*.65+rustle*.04)*gust;
+  }
+  // Sparse groups of soft insect chirps sit wide of the main play area.
+  for(let group=0;group<5;group++){
+   const start=channel*.55+group*3.4+rand(.2,.8);
+   const pitch=rand(3450,4050);
+   for(let chirp=0;chirp<3;chirp++){
+    const offset=Math.floor((start+chirp*.16)*rate);
+    for(let i=0;i<.055*rate;i++){
+     const t=i/rate;
+     const envelope=Math.sin(Math.PI*t/.055)**2;
+     data[offset+i]+=.006*envelope*Math.sin(2*Math.PI*pitch*t)*(1+.3*Math.sin(2*Math.PI*115*t));
+    }
+   }
+  }
+ }
+ const source=ctx.createBufferSource(),gain=ctx.createGain();
+ source.buffer=bed;
+ source.loop=true;
+ gain.gain.value=.4;
+ source.connect(gain).connect(master);
+ source.start();
+}
 function approachSpeed(){return Math.min(3.7,1.1+Math.max(0,round-1)*.19);}
 function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
-function spawn(){const d=directions[Math.floor(Math.random()*4)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed());logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
+function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed());logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.26',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.27',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
  const p=panner();p.connect(master);p.connect(roomSend);
  const ball={id:++throwCounter,p,d,distance:0,age:0,nextBounce:.32,bounces:0,active:true};
- balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);sound('bounce',ctx.currentTime,p,.24);
+ balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);bounce(ctx.currentTime,p,.24);
  logEvent('THROW',{ball:ball.id,direction:d.name,duckDirection:duck.direction.name,duckDistance:duck.distance});
  status.textContent='Ball flying '+d.name+'…';
  if(d!==duck.direction){ball.active=false;startChase(ctx.currentTime);logEvent('MISS_WRONG_DIRECTION',{ball:ball.id,thrown:d.name,duck:duck.direction.name});status.textContent='Miss! The duck is coming to TICKLE you!';}
@@ -159,19 +227,19 @@ if(duck.mode==='tickle'){if(recordedDuckSource)stopRecordedDuck();if(t>=tickleNe
 if(duck.mode==='retreat'&&duck.distance>13){stopRecordedDuck();duck=null;nextDuckAt=t+spawnGap()*rand(.8,1.2);status.textContent='Listening for another duck…';}}
 for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.distance;b.distance+=dt*8.5;pos(b.p,b.d.x*b.distance,Math.max(-.7,-.7+1.2*Math.abs(Math.sin(Math.PI*b.age/Math.max(.12,b.nextBounce)))),b.d.z*b.distance);
  if(b.active&&duck&&duck.mode==='approach'&&b.d===duck.direction&&previousDistance<=previousDuckDistance+.6&&b.distance>=duck.distance-.6){hitDuck(b,t);continue;}
- if(b.active&&b.distance>=14){b.active=false;logEvent('MISS_OUT_OF_RANGE',{ball:b.id,direction:b.d.name,distance:b.distance,duckDistance:duck?duck.distance:null});if(duck&&duck.mode==='approach'){startChase(t);status.textContent='Miss! The duck is coming to TICKLE you!';}}if(b.age>=b.nextBounce&&b.bounces<6){pos(b.p,b.d.x*b.distance,-.7,b.d.z*b.distance);sound('bounce',t,b.p,.70*Math.pow(.72,b.bounces));b.bounces++;b.nextBounce=b.age+Math.max(.095,.43*Math.pow(.76,b.bounces));}}
+ if(b.active&&b.distance>=14){b.active=false;logEvent('MISS_OUT_OF_RANGE',{ball:b.id,direction:b.d.name,distance:b.distance,duckDistance:duck?duck.distance:null});if(duck&&duck.mode==='approach'){startChase(t);status.textContent='Miss! The duck is coming to TICKLE you!';}}if(b.age>=b.nextBounce&&b.bounces<6){pos(b.p,b.d.x*b.distance,-.7,b.d.z*b.distance);bounce(t,b.p,.70*Math.pow(.72,b.bounces));b.bounces++;b.nextBounce=b.age+Math.max(.095,.43*Math.pow(.76,b.bounces));}}
 balls=balls.filter(b=>b.age<4&&b.bounces<6);if(duck&&duck.mode==='approach'&&duck.distance<=1.36){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;logEvent('TICKLE_REACHED_PLAYER',{direction:duck.direction.name});status.textContent='OH NO. TICKLES!';}renderDebug();}}}catch(error){const message=String(error&&error.stack||error);console.error('Duck game loop error',error);lastEvent='ERROR '+message;eventLog.push({time:new Date().toISOString(),round,kind:'RUNTIME_ERROR',message});status.textContent='Game error — open debug and download log';debug.hidden=false;debugToggle.textContent='Hide debug radar (D)';try{renderDebug()}catch(e){telemetry.textContent=message;}}finally{requestAnimationFrame(tick);}}
 button.addEventListener('click',async()=>{button.disabled=true;
 if(!ctx){
  init();
  await ctx.resume();
  button.textContent='Loading audio…';
- status.textContent='Loading the duck recordings…';
- await loadRecordedDucks();
+ status.textContent='Loading game audio…';
+ await loadGameAudio();
 }else{
  await ctx.resume();
 }if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=ctx.currentTime+.3;status.textContent='Listen for a duck…';});
-window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
+window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
 // Native click works on touchscreens, trackpads and mouse; no pointer-only dependency.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
  control.addEventListener('click',async()=>{
@@ -197,7 +265,7 @@ function renderDebug(){
  for(const m of [5,10,13]){c.beginPath();c.arc(cx,cy,m*scale,0,Math.PI*2);c.stroke();c.fillStyle='#789e87';c.font='11px monospace';c.fillText(m+'m',cx+4,cy-m*scale+12);}
  c.beginPath();c.moveTo(cx,8);c.lineTo(cx,h-8);c.moveTo(8,cy);c.lineTo(w-8,cy);c.stroke();
  c.fillStyle='#a3b8aa';c.font='bold 12px monospace';c.textAlign='center';
- c.fillText('FRONT ↑',cx,16);c.fillText('BACK ↓',cx,h-6);c.fillText('LEFT',24,cy-8);c.fillText('RIGHT',w-25,cy-8);
+ c.fillText('FRONT ↑',cx,16);c.fillText('LEFT',24,cy-8);c.fillText('RIGHT',w-25,cy-8);
  c.fillStyle='#e3f2e4';c.beginPath();c.arc(cx,cy,7,0,Math.PI*2);c.fill();c.fillStyle='#0b1510';c.font='bold 10px monospace';c.fillText('YOU',cx,cy-13);
  const point=(d,dist)=>({x:cx+d.x*Math.min(dist,limit)*scale,y:cy+d.z*Math.min(dist,limit)*scale});
  if(duck){const p=point(duck.direction,duck.distance);c.fillStyle=duck.mode==='chase'||duck.mode==='tickle'?'#ff8e83':duck.mode==='retreat'?'#b5d8a6':'#ffd77e';c.beginPath();c.arc(p.x,p.y,10,0,Math.PI*2);c.fill();c.fillStyle='#e5f2e7';c.font='12px monospace';c.fillText('DUCK',p.x,p.y-15);}
