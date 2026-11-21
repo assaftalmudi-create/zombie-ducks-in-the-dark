@@ -234,10 +234,10 @@ function spawnGap(){
  // A quick follow-up can arrive over the previous duck's swear.
  return Math.random()<.35 ? rand(.16,.48) : rand(.85,3.6);
 }
-function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
+function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.36',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.37',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -259,14 +259,14 @@ function hitDuck(ball,t){
  duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.09+.52/duck.voice.quackRate;score++;scoreEl.textContent='Ducks startled: '+score;
  status.textContent='BOINK! Duck startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  const impactDistance=Math.min(duck.distance,3.5);
- pos(ball.p,ball.d.x*impactDistance,duck.voice.wingbeat?2.1:0,ball.d.z*impactDistance);
+ pos(ball.p,ball.d.x*impactDistance,duck.voice.wingbeat?3.6:0,ball.d.z*impactDistance);
  sound('hit',t,ball.p,1.25);
  sound('yelp',t+.045,ball.p,1.35,duck.voice);
  ball.age=999;ball.bounces=99;ball.active=false;
 }
 function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;updateNightAmbience(t);if(!gameOver){if((!duck||duck.mode==='retreat')&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6*duck.voice.walkRate);if(duck.distance<=.68){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;status.textContent='OH NO. TICKLES!';}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed*duck.voice.walkRate;
 const flying=Boolean(duck.voice.wingbeat);
-const flightHeight=2.1+.35*Math.sin(t*7);
+const flightHeight=3.6+.45*Math.sin(t*7);
 pos(duckPanner,duck.direction.x*duck.distance,flying?flightHeight:duck.direction.z>0?-2.8:duck.direction.z<0?2.7:0,duck.direction.z*duck.distance);
 duckDirect.gain.setTargetAtTime(duck.direction.z>0?.63:1,t,.07);
 duckRearSend.gain.setTargetAtTime(duck.direction.z>0?.20:.02,t,.07);
