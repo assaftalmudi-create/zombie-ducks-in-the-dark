@@ -1,6 +1,6 @@
 # Zombie Ducks in the Dark
 
-v0.27 uses three directions (left, front, and right) and adds a nighttime soundscape of wind, rustling, and insects. Wear headphones and use the arrow keys or on-screen controls to throw in the direction you hear.
+v0.28 uses three directions (left, front, and right), a faster ball with a higher-pitched bounce, and a nighttime soundscape of shifting wind and irregular insect calls. Wear headphones and use the arrow keys or on-screen controls to throw in the direction you hear.
 
 Serve the game over HTTP from the repository root with `python3 -m http.server 8000`, then open `http://localhost:8000`.
 

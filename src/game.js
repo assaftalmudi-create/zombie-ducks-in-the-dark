@@ -41,7 +41,7 @@ function bounce(at,p,volume){
  }
  const source=ctx.createBufferSource(),gain=ctx.createGain();
  source.buffer=ballBounce;
- source.playbackRate.value=rand(.93,1.07);
+ source.playbackRate.value=rand(1.28,1.45);
  gain.gain.value=volume;
  source.connect(gain).connect(p);
  source.onended=()=>{source.disconnect();gain.disconnect();};
@@ -78,7 +78,7 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    v=flap+scuff;
   }else if(type==='bounce'){
    // Small superball: bright elastic ping, quick descending chirp and tiny contact.
-   f=(620+510*Math.exp(-t*35)-130*u)*variation;
+   f=(820+680*Math.exp(-t*35)-170*u)*variation;
    noiseFast=.32*noiseFast+.68*(Math.random()*2-1);
    const contact=Math.exp(-t*260)*.11*noiseFast;
    const elastic=Math.exp(-t*28)*(.58*Math.sin(phase)+.14*Math.sin(subPhase));
@@ -135,53 +135,69 @@ for(const [send,delayTime,cutoff,pan] of [[duckFrontReflection,.022,7200,-.35],[
 duckPanner.connect(duckRearSend).connect(duckRearDelay).connect(duckRearFilter).connect(master);
 startNightAmbience();
 }
+let windLevel,windTone,nextGustAt=0,nextInsectAt=0;
 function startNightAmbience(){
- const duration=18,rate=ctx.sampleRate;
- const bed=ctx.createBuffer(2,duration*rate,rate);
+ const rate=ctx.sampleRate;
+ const noise=ctx.createBuffer(2,rate*4,rate);
  for(let channel=0;channel<2;channel++){
-  const data=bed.getChannelData(channel);
-  let wind=0,rustle=0;
+  const data=noise.getChannelData(channel);
   for(let i=0;i<data.length;i++){
-   const t=i/rate;
-   const noise=Math.random()*2-1;
-   wind=.998*wind+.002*noise;
-   rustle=.89*rustle+.11*noise;
-   const gust=.4+.3*Math.sin(2*Math.PI*t/6+channel)+.18*Math.sin(2*Math.PI*t/9);
-   const edge=Math.min(1, t*8, (duration-t)*8);
-   data[i]=edge*(wind*.65+rustle*.04)*gust;
-  }
-  // Sparse groups of soft insect chirps sit wide of the main play area.
-  for(let group=0;group<5;group++){
-   const start=channel*.55+group*3.4+rand(.2,.8);
-   const pitch=rand(3450,4050);
-   for(let chirp=0;chirp<3;chirp++){
-    const offset=Math.floor((start+chirp*.16)*rate);
-    for(let i=0;i<.055*rate;i++){
-     const t=i/rate;
-     const envelope=Math.sin(Math.PI*t/.055)**2;
-     data[offset+i]+=.006*envelope*Math.sin(2*Math.PI*pitch*t)*(1+.3*Math.sin(2*Math.PI*115*t));
-    }
-   }
+   const edge=Math.min(1,i/128,(data.length-1-i)/128);
+   data[i]=(Math.random()*2-1)*edge;
   }
  }
- const source=ctx.createBufferSource(),gain=ctx.createGain();
- source.buffer=bed;
+ const source=ctx.createBufferSource();
+ source.buffer=noise;
  source.loop=true;
- gain.gain.value=.4;
- source.connect(gain).connect(master);
+ windTone=ctx.createBiquadFilter();
+ windTone.type='lowpass';
+ windTone.frequency.value=320;
+ windLevel=ctx.createGain();
+ windLevel.gain.value=.025;
+ source.connect(windTone).connect(windLevel).connect(master);
  source.start();
+ nextInsectAt=ctx.currentTime+rand(3,8);
+}
+function updateNightAmbience(t){
+ if(t>=nextGustAt){
+  const drift=rand(1.5,4);
+  windLevel.gain.setTargetAtTime(rand(.018,.075),t,drift);
+  windTone.frequency.setTargetAtTime(rand(180,780),t,drift);
+  nextGustAt=t+rand(3,11);
+ }
+ if(t<nextInsectAt)return;
+ nextInsectAt=t+rand(5,19);
+ const rate=ctx.sampleRate,count=Math.floor(rand(2,5)),gap=rand(.12,.22);
+ const chirpDuration=rand(.034,.072),pitch=rand(3250,4350);
+ const buffer=ctx.createBuffer(1,Math.ceil((count*gap+.1)*rate),rate);
+ const data=buffer.getChannelData(0);
+ for(let chirp=0;chirp<count;chirp++){
+  const start=Math.floor((chirp*gap+rand(0,.035))*rate);
+  for(let i=0;i<chirpDuration*rate;i++){
+   const age=i/rate;
+   const envelope=Math.sin(Math.PI*age/chirpDuration)**2;
+   data[start+i]=envelope*Math.sin(2*Math.PI*(pitch+480*age)*age)*(1+.3*Math.sin(2*Math.PI*115*age));
+  }
+ }
+ const source=ctx.createBufferSource(),gain=ctx.createGain(),pan=ctx.createStereoPanner();
+ source.buffer=buffer;
+ gain.gain.value=rand(.002,.005);
+ pan.pan.value=rand(-.92,.92);
+ source.connect(gain).connect(pan).connect(master);
+ source.onended=()=>{source.disconnect();gain.disconnect();pan.disconnect();};
+ source.start(t);
 }
 function approachSpeed(){return Math.min(3.7,1.1+Math.max(0,round-1)*.19);}
 function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed());logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.27',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.28',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
  const p=panner();p.connect(master);p.connect(roomSend);
- const ball={id:++throwCounter,p,d,distance:0,age:0,nextBounce:.32,bounces:0,active:true};
+ const ball={id:++throwCounter,p,d,distance:0,age:0,lastBounce:0,nextBounce:.24,bounces:0,active:true};
  balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);bounce(ctx.currentTime,p,.24);
  logEvent('THROW',{ball:ball.id,direction:d.name,duckDirection:duck.direction.name,duckDistance:duck.distance});
  status.textContent='Ball flying '+d.name+'…';
@@ -199,7 +215,7 @@ function hitDuck(ball,t){
  pos(ball.p,ball.d.x*duck.distance,0,ball.d.z*duck.distance);sound('hit',t,ball.p,.62);
  ball.age=999;ball.bounces=99;ball.active=false;
 }
-function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;if(!gameOver){if(!duck&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6);if(duck.distance<=.68){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;status.textContent='OH NO. TICKLES!';}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed;
+function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;updateNightAmbience(t);if(!gameOver){if(!duck&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6);if(duck.distance<=.68){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;status.textContent='OH NO. TICKLES!';}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed;
 pos(duckPanner,duck.direction.x*duck.distance,duck.direction.z>0?-2.8:duck.direction.z<0?2.7:0,duck.direction.z*duck.distance);
 duckDirect.gain.setTargetAtTime(duck.direction.z>0?.63:1,t,.07);
 duckRearSend.gain.setTargetAtTime(duck.direction.z>0?.20:.02,t,.07);
@@ -225,10 +241,13 @@ if(!duck.recorded&&(duck.mode==='approach'||duck.mode==='chase'||duck.mode==='re
 duckFilter.frequency.setTargetAtTime(Math.max(900,(duck.direction.z>0?2350:duck.direction.z<0?9000:6000)/(1+duck.distance*.075)),t,.06);
 if(duck.mode==='tickle'){if(recordedDuckSource)stopRecordedDuck();if(t>=tickleNext){sound('tickle',t,duckFilter,.42);tickleNext=t+.12+Math.random()*.11;}if(t>=tickleUntil){sound('death',t,duckFilter,.6);gameOver=true;logEvent('GAME_OVER',{reason:'tickled'});status.textContent='GAME OVER — TICKLED TO DEATH. Restart to try again.';button.disabled=false;button.textContent='Play again';}}else if(t>=duck.nextQuack){if(!duck.recorded)sound(duck.mode==='retreat'?'retreat':'quack',t+.01,duckFilter,duck.mode==='retreat'?.43:duck.mode==='chase'?.8:.68,duck.voice);duck.nextQuack=t+(duck.mode==='retreat'?.55:duck.mode==='chase'?rand(.22,.38):rand(.8,1.35)*duck.voice.tempo);}
 if(duck.mode==='retreat'&&duck.distance>13){stopRecordedDuck();duck=null;nextDuckAt=t+spawnGap()*rand(.8,1.2);status.textContent='Listening for another duck…';}}
-for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.distance;b.distance+=dt*8.5;pos(b.p,b.d.x*b.distance,Math.max(-.7,-.7+1.2*Math.abs(Math.sin(Math.PI*b.age/Math.max(.12,b.nextBounce)))),b.d.z*b.distance);
+for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.distance;b.distance+=dt*12.5;
+ const bouncePhase=Math.min(1,(b.age-b.lastBounce)/(b.nextBounce-b.lastBounce));
+ const height=1.55*Math.pow(.78,b.bounces)*Math.sin(Math.PI*bouncePhase);
+ pos(b.p,b.d.x*b.distance,-.7+height,b.d.z*b.distance);
  if(b.active&&duck&&duck.mode==='approach'&&b.d===duck.direction&&previousDistance<=previousDuckDistance+.6&&b.distance>=duck.distance-.6){hitDuck(b,t);continue;}
- if(b.active&&b.distance>=14){b.active=false;logEvent('MISS_OUT_OF_RANGE',{ball:b.id,direction:b.d.name,distance:b.distance,duckDistance:duck?duck.distance:null});if(duck&&duck.mode==='approach'){startChase(t);status.textContent='Miss! The duck is coming to TICKLE you!';}}if(b.age>=b.nextBounce&&b.bounces<6){pos(b.p,b.d.x*b.distance,-.7,b.d.z*b.distance);bounce(t,b.p,.70*Math.pow(.72,b.bounces));b.bounces++;b.nextBounce=b.age+Math.max(.095,.43*Math.pow(.76,b.bounces));}}
-balls=balls.filter(b=>b.age<4&&b.bounces<6);if(duck&&duck.mode==='approach'&&duck.distance<=1.36){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;logEvent('TICKLE_REACHED_PLAYER',{direction:duck.direction.name});status.textContent='OH NO. TICKLES!';}renderDebug();}}}catch(error){const message=String(error&&error.stack||error);console.error('Duck game loop error',error);lastEvent='ERROR '+message;eventLog.push({time:new Date().toISOString(),round,kind:'RUNTIME_ERROR',message});status.textContent='Game error — open debug and download log';debug.hidden=false;debugToggle.textContent='Hide debug radar (D)';try{renderDebug()}catch(e){telemetry.textContent=message;}}finally{requestAnimationFrame(tick);}}
+ if(b.active&&b.distance>=14){b.active=false;logEvent('MISS_OUT_OF_RANGE',{ball:b.id,direction:b.d.name,distance:b.distance,duckDistance:duck?duck.distance:null});if(duck&&duck.mode==='approach'){startChase(t);status.textContent='Miss! The duck is coming to TICKLE you!';}}if(b.age>=b.nextBounce&&b.bounces<6){pos(b.p,b.d.x*b.distance,-.7,b.d.z*b.distance);bounce(t,b.p,.70*Math.pow(.72,b.bounces));b.bounces++;b.lastBounce=b.age;b.nextBounce=b.age+Math.max(.075,.28*Math.pow(.82,b.bounces));}}
+balls=balls.filter(b=>b.age<4&&(b.active||b.bounces<6));if(duck&&duck.mode==='approach'&&duck.distance<=1.36){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;logEvent('TICKLE_REACHED_PLAYER',{direction:duck.direction.name});status.textContent='OH NO. TICKLES!';}renderDebug();}}}catch(error){const message=String(error&&error.stack||error);console.error('Duck game loop error',error);lastEvent='ERROR '+message;eventLog.push({time:new Date().toISOString(),round,kind:'RUNTIME_ERROR',message});status.textContent='Game error — open debug and download log';debug.hidden=false;debugToggle.textContent='Hide debug radar (D)';try{renderDebug()}catch(e){telemetry.textContent=message;}}finally{requestAnimationFrame(tick);}}
 button.addEventListener('click',async()=>{button.disabled=true;
 if(!ctx){
  init();
