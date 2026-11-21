@@ -12,38 +12,55 @@ const duckVoices=[
  {name:'Noodle',base:275,formant:2.15,wobble:28,chirp:1.15,tempo:1.05}
 ];
 function sound(type,at,p,volume=1,voice=duckVoices[0]){
+ // Cartoon gestures are built as two articulated syllables rather than a sustained beep.
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.34*voice.tempo):(type==='hit'?.52:type==='tickle'?.2:type==='death'?.9:.25);
+ const dur=isDuck?(.46*voice.tempo):(type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
- let phase=0;
+ let phase=0,subPhase=0;
+ const soft=(x)=>Math.max(0,Math.min(1,x));
+ const bell=(u,a,b)=>{const x=soft((u-a)/(b-a));return Math.sin(Math.PI*x)**1.6;};
+ const accent=rand(.94,1.06);
  for(let i=0;i<data.length;i++){
   const t=i/ctx.sampleRate,u=t/dur;
-  let f,v;
+  let f=250,v=0;
   if(isDuck){
-   // Squash-and-stretch pitch contour with a little voiced flutter.
-   const bend=type==='retreat'?.9:1;
-   f=voice.base*bend*(1+.22*Math.exp(-u*13)-.18*u+.13*Math.sin(Math.PI*u)*Math.sin(u*voice.wobble));
-   const attack=Math.min(1,u*25),tail=Math.pow(1-u,1.5),pulse=.83+.17*Math.sin(2*Math.PI*(11+voice.wobble*.13)*t);
-   const formant=voice.formant+.22*Math.sin(u*9);
-   v=attack*tail*pulse*(.37*Math.sin(phase)+.21*Math.sin(phase*formant)+.11*Math.sin(phase*(formant+1.05)));
-   if(type==='retreat')v*=.7;
-  }else if(type==='tickle'){
-   f=660+220*Math.sin(t*46)+130*Math.sin(t*21);
-   v=Math.sin(Math.PI*u)*Math.pow(1-u,.7)*(.15*Math.sin(phase)+.085*Math.sin(2.6*phase)+.045*Math.sin(4.1*phase));
-  }else if(type==='death'){
-   f=370*Math.pow(.53,u)+24*Math.sin(t*8);
-   v=Math.sin(Math.PI*u)*(.25*Math.sin(phase)+.13*Math.sin(1.5*phase));
+   const first=bell(u,.015,.49),second=bell(u,.39,.98);
+   const swoop=1+.31*Math.exp(-u*20)-.21*u+.085*Math.sin(u*voice.wobble);
+   f=voice.base*swoop*(type==='retreat'?1.28:1);
+   const vowel=.46*Math.sin(phase)+.19*Math.sin(phase*2)+.09*Math.sin(phase*3);
+   const nasal=.18*Math.sin(subPhase)+.07*Math.sin(subPhase*2.01);
+   const trem=.91+.09*Math.sin(2*Math.PI*13*t);
+   v=(first*.75+second*.95)*trem*(vowel+nasal);
+   if(type==='retreat')v*=.76;
+  }else if(type==='bounce'){
+   // A soft rubber impact, pitched down with a tiny elastic upward after-bend.
+   f=175+310*Math.exp(-t*24)+52*Math.sin(2*Math.PI*11*t)*Math.exp(-t*12);
+   const knock=Math.exp(-t*38)*Math.sin(phase*1.95);
+   const boing=Math.exp(-t*13)*(.55*Math.sin(phase)+.18*Math.sin(subPhase));
+   v=.24*knock+.5*boing;
   }else if(type==='hit'){
-   f=210+740*Math.exp(-t*12)+90*Math.sin(t*28);
-   v=Math.pow(1-u,2)*(.48*Math.sin(phase)+.22*Math.sin(phase*1.48));
-  }else{
-   f=170+300*Math.exp(-t*17)+36*Math.sin(t*22);
-   v=Math.pow(1-u,2.5)*(.45*Math.sin(phase)+.16*Math.sin(phase*2.4));
+   // A buoyant collision followed by a small comic flourish.
+   f=245+690*Math.exp(-t*15)+70*Math.sin(2*Math.PI*9*t)*Math.exp(-t*5);
+   v=Math.exp(-t*9)*(.55*Math.sin(phase)+.23*Math.sin(subPhase))+
+     .13*bell(u,.34,.95)*Math.sin(phase*1.52);
+  }else if(type==='tickle'){
+   // Feather-light close-up flutter; avoid piercing sustained treble.
+   f=510+150*Math.sin(2*Math.PI*19*t)+80*Math.sin(2*Math.PI*7*t);
+   v=bell(u,0,1)*(.2*Math.sin(phase)+.1*Math.sin(subPhase)+.055*Math.sin(phase*3));
+  }else if(type==='death'){
+   // A cartoon deflation rather than a frightening death sound.
+   f=370*Math.pow(.37,u)+22*Math.sin(2*Math.PI*4*t);
+   v=Math.sin(Math.PI*u)*(.33*Math.sin(phase)+.13*Math.sin(subPhase));
   }
   phase+=2*Math.PI*f/ctx.sampleRate;
-  data[i]=Math.tanh(v*1.2)*.8;
+  subPhase+=2*Math.PI*f*(isDuck?voice.formant:1.52)/ctx.sampleRate;
+  data[i]=Math.tanh(v*1.25)*.72*accent;
  }
- const src=ctx.createBufferSource(),gain=ctx.createGain();src.buffer=buf;gain.gain.value=volume;src.connect(gain).connect(p);src.start(Math.max(at,ctx.currentTime));
+ const src=ctx.createBufferSource(),gain=ctx.createGain();
+ src.buffer=buf;gain.gain.value=volume;
+ src.connect(gain).connect(p);
+ src.start(Math.max(at,ctx.currentTime));
+ src.onended=()=>{src.disconnect();gain.disconnect();};
 }
 function init(){ctx=new (window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.37;const limiter=ctx.createDynamicsCompressor();limiter.threshold.value=-17;limiter.knee.value=12;limiter.ratio.value=5;limiter.attack.value=.006;limiter.release.value=.22;master.connect(limiter).connect(ctx.destination);
 const impulse=ctx.createBuffer(2,Math.floor(ctx.sampleRate*.38),ctx.sampleRate);for(let c=0;c<2;c++){const a=impulse.getChannelData(c);for(let i=0;i<a.length;i++)a[i]=(Math.random()*2-1)*Math.exp(-i/ctx.sampleRate*15)*.12;}const verb=ctx.createConvolver();verb.buffer=impulse;roomSend=ctx.createGain();roomSend.gain.value=.11;roomSend.connect(verb).connect(master);
@@ -53,7 +70,7 @@ const bed=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),bd=bed.getChannelD
 function spawn(){const d=directions[Math.floor(Math.random()*4)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,escapeSpeed:5.8};round++;logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.11',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.12',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
