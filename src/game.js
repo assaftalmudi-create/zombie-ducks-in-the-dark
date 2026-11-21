@@ -4,7 +4,6 @@ let gameOver=false,tickleUntil=0,tickleNext=0;
 let ctx,master,roomSend,playing=false,duck=null,balls=[],nextDuckAt=0,last=0,score=0,round=0,duckPanner,duckFilter,duckGain;
 const rand=(a,b)=>a+Math.random()*(b-a);
 function panner(){const p=ctx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=1.3;p.maxDistance=35;p.rolloffFactor=.85;p.coneInnerAngle=360;return p;}
-function directionTone(input,d){const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=d.z>0?1550:d.z<0?8500:5100;f.Q.value=.55;input.connect(f);return f;}
 function pos(p,x,y,z){if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}else p.setPosition(x,y,z);}
 // Original procedural cartoon palette: elastic pitch, soft attacks and short comic gestures.
 const duckVoices=[
