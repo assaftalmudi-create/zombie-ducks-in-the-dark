@@ -51,7 +51,7 @@ function bounce(at,p,volume){
 function sound(type,at,p,volume=1,voice=duckVoices[0]){
  // Cartoon gestures are built as two articulated syllables rather than a sustained beep.
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.46*voice.tempo):(type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='footstep'?.135:type==='bounce'?.19:.31);
+ const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.19:type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='footstep'?.135:type==='bounce'?.19:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
  let phase=0,subPhase=0;let noiseState=0,noiseFast=0;
  const soft=(x)=>Math.max(0,Math.min(1,x));
@@ -77,6 +77,17 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    const flap=Math.exp(-t*55)*(.68*noiseState+.16*noiseFast);
    const scuff=Math.exp(-Math.max(0,t-.047)*68)*.44*noiseState*soft((t-.047)*200);
    v=flap+scuff;
+  }else if(type==='throw'){
+   // A quick forward swish with a rising whistle at release.
+   f=(360+1400*u*u)*variation;
+   noiseFast=.42*noiseFast+.58*(Math.random()*2-1);
+   v=.42*bell(u,0,.9)*noiseFast+.34*bell(u,.04,1)*Math.sin(phase);
+  }else if(type==='yelp'){
+   // A startled nasal squawk, voiced like the duck that just got hit.
+   f=voice.base*(2.15+1.15*bell(u,0,.6)-.75*u)*variation;
+   noiseFast=.65*noiseFast+.35*(Math.random()*2-1);
+   const squawk=.58*Math.sin(phase)+.23*Math.sin(phase*2)+.14*Math.sin(phase*3);
+   v=bell(u,0,1)*(squawk*(.85+.15*Math.sin(2*Math.PI*38*t))+.16*noiseFast);
   }else if(type==='bounce'){
    // Layer a short slap and an elastic pitch sweep over the recorded impact.
    f=(410+1350*Math.exp(-t*29)-95*u)*variation;
@@ -195,13 +206,13 @@ function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed());logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.29',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.30',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
  const p=panner();p.connect(master);p.connect(roomSend);
  const ball={id:++throwCounter,p,d,distance:0,age:0,lastBounce:0,nextBounce:.24,bounces:0,active:true};
- balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);bounce(ctx.currentTime,p,.24);
+ balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);sound('throw',ctx.currentTime,p,.7);
  logEvent('THROW',{ball:ball.id,direction:d.name,duckDirection:duck.direction.name,duckDistance:duck.distance});
  status.textContent='Ball flying '+d.name+'…';
  if(d!==duck.direction){ball.active=false;startChase(ctx.currentTime);logEvent('MISS_WRONG_DIRECTION',{ball:ball.id,thrown:d.name,duck:duck.direction.name});status.textContent='Miss! The duck is coming to TICKLE you!';}
@@ -213,11 +224,12 @@ function startChase(t){
  duck.nextQuack=t+.08;
 }
 function hitDuck(ball,t){
- duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.12;score++;scoreEl.textContent='Ducks startled: '+score;
+ duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.30;score++;scoreEl.textContent='Ducks startled: '+score;
  status.textContent='BOINK! Duck startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  const impactDistance=Math.min(duck.distance,3.5);
  pos(ball.p,ball.d.x*impactDistance,0,ball.d.z*impactDistance);
  sound('hit',t,ball.p,1.25);
+ sound('yelp',t+.045,ball.p,1.05,duck.voice);
  ball.age=999;ball.bounces=99;ball.active=false;
 }
 function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;updateNightAmbience(t);if(!gameOver){if(!duck&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6);if(duck.distance<=.68){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;status.textContent='OH NO. TICKLES!';}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed;
@@ -264,9 +276,9 @@ if(!ctx){
  await ctx.resume();
 }if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=ctx.currentTime+.3;status.textContent='Listen for a duck…';});
 window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
-// Native click works on touchscreens, trackpads and mouse; no pointer-only dependency.
+// Pointer presses throw immediately. Keyboard and assistive activation still use click.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
- control.addEventListener('click',async()=>{
+ const handleThrow=async()=>{
   const d=directions.find(item=>item.name===control.dataset.direction);
   if(!d)return;
   if(!ctx||!playing){status.textContent='Tap PLAY GAME first.';return;}
@@ -275,6 +287,12 @@ document.querySelectorAll('.touch-controls button[data-direction]').forEach(cont
   if(!duck){status.textContent='Listening… wait for the next duck.';return;}
   if(duck.mode!=='approach'){status.textContent='The duck is '+duck.mode+' — wait for the next round.';return;}
   throwBall(d);
+ };
+ control.addEventListener('pointerdown',event=>{
+  if(event.isPrimary&&event.button===0)handleThrow();
+ });
+ control.addEventListener('click',event=>{
+  if(event.detail===0)handleThrow();
  });
 });
 requestAnimationFrame(t=>{last=t;requestAnimationFrame(tick);});
