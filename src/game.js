@@ -30,10 +30,30 @@ function panner(){const p=ctx.createPanner();p.panningModel='HRTF';p.distanceMod
 function pos(p,x,y,z){if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}else p.setPosition(x,y,z);}
 // Original procedural cartoon palette: elastic pitch, soft attacks and short comic gestures.
 const duckVoices=[
- {name:'Pip',base:390,formant:2.8,wobble:19,chirp:1.55,tempo:.83,walkRate:1.22,quackRate:2**(3/12)},
- {name:'Bloop',base:185,formant:1.65,wobble:11,chirp:.72,tempo:1.3,walkRate:.78,quackRate:2**(-3/12)},
- {name:'Noodle',base:275,formant:2.15,wobble:28,chirp:1.15,tempo:1.05,walkRate:1,quackRate:1}
-];
+ {name:'Pip',       base:390,formant:2.80,wobble:19,tempo:.83,walkRate:1.22,semitones:3},
+ {name:'Bloop',     base:185,formant:1.65,wobble:11,tempo:1.30,walkRate:.78,semitones:-3},
+ {name:'Noodle',    base:275,formant:2.15,wobble:28,tempo:1.05,walkRate:1.00,semitones:0},
+ {name:'Grumble',   base:135,formant:1.42,wobble:8, tempo:1.48,walkRate:.72,semitones:-7},
+ {name:'Squeak',    base:475,formant:2.95,wobble:32,tempo:.66,walkRate:1.31,semitones:7},
+ {name:'Wobble',    base:235,formant:2.65,wobble:39,tempo:1.23,walkRate:.90,semitones:-2},
+ {name:'Beak',      base:340,formant:3.20,wobble:12,tempo:.73,walkRate:1.11,semitones:4},
+ {name:'Gurgle',    base:160,formant:2.45,wobble:33,tempo:1.38,walkRate:1.10,semitones:-5},
+ {name:'Hiccup',    base:420,formant:1.88,wobble:31,tempo:.78,walkRate:.87,semitones:5},
+ {name:'Mumble',    base:210,formant:1.53,wobble:16,tempo:1.32,walkRate:.81,semitones:-4},
+ {name:'Rattle',    base:310,formant:2.55,wobble:45,tempo:.90,walkRate:1.38,semitones:2},
+ {name:'Side Eye',  base:255,formant:1.98,wobble:14,tempo:1.15,walkRate:.95,semitones:-1}
+].map(voice=>({...voice,quackRate:2**(voice.semitones/12)}));
+
+let remainingVoices=[],lastVoice;
+function nextDuckVoice(){
+ if(!remainingVoices.length)remainingVoices=[...duckVoices];
+ let index=Math.floor(Math.random()*remainingVoices.length);
+ if(remainingVoices[index]===lastVoice&&remainingVoices.length>1){
+  index=(index+1)%remainingVoices.length;
+ }
+ [lastVoice]=remainingVoices.splice(index,1);
+ return lastVoice;
+}
 function bounce(at,p,volume){
  if(!ballBounce){
   sound('bounce',at,p,volume);
@@ -88,8 +108,8 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    f=voice.base*(1.65+1.1*bark-.36*grumble+.68*lastWord)*variation;
    noiseFast=.65*noiseFast+.35*(Math.random()*2-1);
    const vowel=.52*Math.sin(phase)+.26*Math.sin(phase*2)+.14*Math.sin(phase*3);
-   const rasp=.23*noiseFast+.14*Math.sin(subPhase*1.7);
-   v=(bark+grumble*.66+lastWord*.9)*(vowel*(.85+.15*Math.sin(2*Math.PI*38*t))+rasp);
+   const rasp=.23*noiseFast+.14*Math.sin(subPhase);
+   v=(bark+grumble*.66+lastWord*.9)*(vowel*(.85+.15*Math.sin(2*Math.PI*(20+voice.wobble)*t))+rasp);
   }else if(type==='bounce'){
    // Layer a short slap and an elastic pitch sweep over the recorded impact.
    f=(410+1350*Math.exp(-t*29)-95*u)*variation;
@@ -115,7 +135,7 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    v=Math.sin(Math.PI*u)*(.33*Math.sin(phase)+.13*Math.sin(subPhase));
   }
   phase+=2*Math.PI*f/ctx.sampleRate;
-  subPhase+=2*Math.PI*f*(isDuck?voice.formant:1.52)/ctx.sampleRate;
+  subPhase+=2*Math.PI*f*((isDuck||type==='yelp')?voice.formant:1.52)/ctx.sampleRate;
   // Smooth the very beginning/end to avoid clicks; preserve floating-point headroom.
   const fade=Math.min(1,t*800,Math.max(0,(dur-t)*240));
   data[i]=Math.tanh(v*1.1)*.64*accent*Math.max(0,fade);
@@ -205,10 +225,10 @@ function updateNightAmbience(t){
 }
 function approachSpeed(){return Math.min(3.7,1.1+Math.max(0,round-1)*.19)*duck.voice.walkRate;}
 function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
-function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
+function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.33',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.34',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
