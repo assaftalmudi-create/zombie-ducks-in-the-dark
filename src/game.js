@@ -3,7 +3,7 @@ const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,ke
 let gameOver=false,tickleUntil=0,tickleNext=0;
 const recordedDuckFiles={front:'Duck_Up.wav',left:'Duck_Left.wav',right:'Duck_Right.wav'};
 const recordedDucks={};let recordedDuckSource=null,recordedDuckGain=null;
-let ballBounce,swampBed;
+let ballBounce,swampBed,openingVoice;
 async function loadAudioFile(file){
  try{
   const response=await fetch('./audio/'+file);
@@ -20,7 +20,8 @@ async function loadGameAudio(){
    recordedDucks[direction]=await loadAudioFile(file);
   }),
   loadAudioFile('Ball_Bounce.wav').then(buffer=>{ballBounce=buffer;}),
-  loadAudioFile('Fuki_Night.mp3').then(buffer=>{swampBed=buffer;})
+  loadAudioFile('Fuki_Night.mp3').then(buffer=>{swampBed=buffer;}),
+  loadAudioFile('Opening_Voice.mp3').then(buffer=>{openingVoice=buffer;})
  ]);
 }
 function stopRecordedDuck(){if(recordedDuckSource){try{recordedDuckSource.stop();}catch(e){}recordedDuckSource.disconnect();recordedDuckSource=null;}if(recordedDuckGain){recordedDuckGain.disconnect();recordedDuckGain=null;}}
@@ -236,7 +237,52 @@ function updateSwamp(t){
   setTimeout(()=>drop.disconnect(),500);
  }
 }
+let nextChimeAt=0;
+function playChimePhrase(t){
+ const tones=[220,246.94,293.66,329.63,392];
+ const count=Math.floor(rand(2,4)),first=Math.floor(rand(0,tones.length));
+ for(let note=0;note<count;note++){
+  const at=t+note*rand(.6,1.35);
+  const base=tones[(first+note*2)%tones.length];
+  const bell=panner(),level=ctx.createGain();
+  pos(bell,rand(-3,3),rand(.6,1.8),-3.3);
+  bell.connect(master);
+  level.connect(bell);
+  level.gain.setValueAtTime(0,at);
+  level.gain.linearRampToValueAtTime(.024,at+.035);
+  level.gain.exponentialRampToValueAtTime(.0001,at+3.1);
+  for(const [ratio,amplitude] of [[1,.85],[2.01,.16],[4.13,.06]]){
+   const tone=ctx.createOscillator(),partial=ctx.createGain();
+   tone.frequency.value=base*ratio;
+   partial.gain.value=amplitude;
+   tone.connect(partial).connect(level);
+   tone.start(at);
+   tone.stop(at+3.15);
+   tone.onended=()=>{tone.disconnect();partial.disconnect();};
+  }
+  setTimeout(()=>{level.disconnect();bell.disconnect();},(at-t+7)*1000);
+ }
+}
+function playOpening(t){
+ const at=t+.35;
+ if(!openingVoice)return t+.5;
+ const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
+ pos(location,-.62,.35,-1.35);
+ if(location.positionX)location.positionX.setTargetAtTime(.58,at+.55,1.1);
+ level.gain.value=.72;
+ voice.buffer=openingVoice;
+ voice.connect(level).connect(location);
+ location.connect(master);
+ location.connect(roomSend);
+ voice.onended=()=>{voice.disconnect();level.disconnect();location.disconnect();};
+ voice.start(at);
+ return at+openingVoice.duration+.55;
+}
 function updateNightAmbience(t){
+ if(t>=nextChimeAt){
+  playChimePhrase(t);
+  nextChimeAt=t+rand(22,43);
+ }
  if(swampBed&&swampBed.duration>=24){
   updateSwamp(t);
   return;
@@ -277,7 +323,7 @@ function spawnGap(){
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.38',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.39',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -348,7 +394,7 @@ if(!ctx){
  await loadGameAudio();
 }else{
  await ctx.resume();
-}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=ctx.currentTime+.3;status.textContent='Listen for a duck…';});
+}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextChimeAt=ctx.currentTime+1.3;nextDuckAt=playOpening(ctx.currentTime);status.textContent='When you close your eyes, the ducks appear.';});
 window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
 // Pointer presses throw immediately. Keyboard and assistive activation still use click.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
