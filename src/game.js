@@ -51,7 +51,7 @@ function bounce(at,p,volume){
 function sound(type,at,p,volume=1,voice=duckVoices[0]){
  // Cartoon gestures are built as two articulated syllables rather than a sustained beep.
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.19:type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='footstep'?.135:type==='bounce'?.19:.31);
+ const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='footstep'?.135:type==='bounce'?.19:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
  let phase=0,subPhase=0;let noiseState=0,noiseFast=0;
  const soft=(x)=>Math.max(0,Math.min(1,x));
@@ -83,11 +83,13 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    noiseFast=.42*noiseFast+.58*(Math.random()*2-1);
    v=.42*bell(u,0,.9)*noiseFast+.34*bell(u,.04,1)*Math.sin(phase);
   }else if(type==='yelp'){
-   // A startled nasal squawk, voiced like the duck that just got hit.
-   f=voice.base*(2.15+1.15*bell(u,0,.6)-.75*u)*variation;
+   // Three clipped syllables: the startled bark, a grumble, and a sharp last word.
+   const bark=bell(u,0,.24),grumble=bell(u,.29,.58),lastWord=bell(u,.63,.98);
+   f=voice.base*(1.65+1.1*bark-.36*grumble+.68*lastWord)*variation;
    noiseFast=.65*noiseFast+.35*(Math.random()*2-1);
-   const squawk=.58*Math.sin(phase)+.23*Math.sin(phase*2)+.14*Math.sin(phase*3);
-   v=bell(u,0,1)*(squawk*(.85+.15*Math.sin(2*Math.PI*38*t))+.16*noiseFast);
+   const vowel=.52*Math.sin(phase)+.26*Math.sin(phase*2)+.14*Math.sin(phase*3);
+   const rasp=.23*noiseFast+.14*Math.sin(subPhase*1.7);
+   v=(bark+grumble*.66+lastWord*.9)*(vowel*(.85+.15*Math.sin(2*Math.PI*38*t))+rasp);
   }else if(type==='bounce'){
    // Layer a short slap and an elastic pitch sweep over the recorded impact.
    f=(410+1350*Math.exp(-t*29)-95*u)*variation;
@@ -206,7 +208,7 @@ function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.32',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.33',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -224,7 +226,7 @@ function startChase(t){
  duck.nextQuack=t+.08;
 }
 function hitDuck(ball,t){
- duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.30;score++;scoreEl.textContent='Ducks startled: '+score;
+ duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.09+.52/duck.voice.quackRate;score++;scoreEl.textContent='Ducks startled: '+score;
  status.textContent='BOINK! Duck startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  const impactDistance=Math.min(duck.distance,3.5);
  pos(ball.p,ball.d.x*impactDistance,0,ball.d.z*impactDistance);
