@@ -3,7 +3,7 @@ const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,ke
 let gameOver=false,tickleUntil=0,tickleNext=0;
 const recordedDuckFiles={front:'Duck_Up.wav',left:'Duck_Left.wav',right:'Duck_Right.wav'};
 const recordedDucks={};let recordedDuckSource=null,recordedDuckGain=null;
-let ballBounce;
+let ballBounce,swampBed;
 async function loadAudioFile(file){
  try{
   const response=await fetch('./audio/'+file);
@@ -19,7 +19,8 @@ async function loadGameAudio(){
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file);
   }),
-  loadAudioFile('Ball_Bounce.wav').then(buffer=>{ballBounce=buffer;})
+  loadAudioFile('Ball_Bounce.wav').then(buffer=>{ballBounce=buffer;}),
+  loadAudioFile('Fuki_Night.mp3').then(buffer=>{swampBed=buffer;})
  ]);
 }
 function stopRecordedDuck(){if(recordedDuckSource){try{recordedDuckSource.stop();}catch(e){}recordedDuckSource.disconnect();recordedDuckSource=null;}if(recordedDuckGain){recordedDuckGain.disconnect();recordedDuckGain=null;}}
@@ -71,7 +72,7 @@ function bounce(at,p,volume){
 function sound(type,at,p,volume=1,voice=duckVoices[0]){
  // Cartoon gestures are built as two articulated syllables rather than a sustained beep.
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
+ const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?.19:type==='death'?.95:type==='water'?.24:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
  let phase=0,subPhase=0;let noiseState=0,noiseFast=0;
  const soft=(x)=>Math.max(0,Math.min(1,x));
@@ -89,6 +90,12 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    const trem=.91+.09*Math.sin(2*Math.PI*13*t);noiseFast=.78*noiseFast+.22*(Math.random()*2-1);
    v=(first*.75+second*.95)*trem*(vowel+nasal)+.07*noiseFast*(Math.exp(-t*80)+Math.exp(-Math.max(0,t-dur*.42)*85)*soft((t-dur*.42)*300));
    if(type==='retreat')v*=.76;
+  }else if(type==='water'){
+   // A wet plip, then a much smaller bubble.
+   const drop=bell(u,0,.31),bubble=bell(u,.4,.69);
+   f=(440+2150*u)*variation;
+   noiseFast=.55*noiseFast+.45*(Math.random()*2-1);
+   v=drop*(.65*Math.sin(phase)+.22*noiseFast)+bubble*.24*Math.sin(subPhase);
   }else if(type==='wingbeat'){
    noiseState=.92*noiseState+.08*(Math.random()*2-1);
    noiseFast=.55*noiseFast+.45*(Math.random()*2-1);
@@ -200,7 +207,40 @@ function startNightAmbience(){
  source.start();
  nextInsectAt=ctx.currentTime+rand(3,8);
 }
+let nextSwampPhrase=0,nextWaterDrop=0,lastSwampOffset;
+function updateSwamp(t){
+ // Crossfade different stretches of the original binaural stereo field.
+ if(t>=nextSwampPhrase){
+  const duration=rand(15,23),fade=3;
+  const halfway=(swampBed.duration-duration)/2;
+  const offset=lastSwampOffset===undefined||lastSwampOffset>=halfway
+   ?rand(0,halfway):rand(halfway,halfway*2);
+  lastSwampOffset=offset;
+  const source=ctx.createBufferSource(),gain=ctx.createGain();
+  source.buffer=swampBed;
+  source.connect(gain).connect(master);
+  gain.gain.setValueAtTime(0,t);
+  gain.gain.linearRampToValueAtTime(.24,t+fade);
+  gain.gain.setValueAtTime(.24,t+duration-fade);
+  gain.gain.linearRampToValueAtTime(0,t+duration);
+  source.onended=()=>{source.disconnect();gain.disconnect();};
+  source.start(t,offset,duration);
+  nextSwampPhrase=t+duration-fade;
+ }
+ if(t>=nextWaterDrop){
+  nextWaterDrop=t+rand(5,17);
+  const drop=panner(),angle=rand(-Math.PI,Math.PI),distance=rand(1.6,3.5);
+  pos(drop,Math.sin(angle)*distance,-.8,Math.cos(angle)*distance);
+  drop.connect(master);
+  sound('water',t,drop,rand(.012,.028));
+  setTimeout(()=>drop.disconnect(),500);
+ }
+}
 function updateNightAmbience(t){
+ if(swampBed&&swampBed.duration>=24){
+  updateSwamp(t);
+  return;
+ }
  if(t>=nextGustAt){
   const drift=rand(1.5,4);
   windLevel.gain.setTargetAtTime(rand(.018,.075),t,drift);
@@ -237,7 +277,7 @@ function spawnGap(){
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.37',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.38',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
