@@ -27,7 +27,27 @@ pos(duckPanner,duck.direction.x*duck.distance,0,duck.direction.z*duck.distance);
 if(duck.mode==='tickle'){if(t>=tickleNext){sound('tickle',t,duckFilter,.42);tickleNext=t+.12+Math.random()*.11;}if(t>=tickleUntil){sound('death',t,duckFilter,.6);gameOver=true;status.textContent='GAME OVER — TICKLED TO DEATH. Restart to try again.';button.disabled=false;button.textContent='Play again';}}else if(t>=duck.nextQuack){sound(duck.mode==='retreat'?'retreat':'quack',t+.01,duckFilter,duck.mode==='retreat'?.43:duck.mode==='chase'?.8:.68);duck.nextQuack=t+(duck.mode==='retreat'?.55:duck.mode==='chase'?rand(.22,.38):rand(.9,1.5));}
 if(duck.mode==='retreat'&&duck.distance>13){duck=null;nextDuckAt=t+rand(1,2);status.textContent='Listening for another duck…';}}
 for(const b of balls){if(b.age>=999)continue;b.age+=dt;b.distance+=dt*6.5;pos(b.p,b.d.x*b.distance,.12,b.d.z*b.distance);if(b.age>=b.nextBounce&&b.bounces<6){sound('bounce',t,b.p,.37*Math.pow(.68,b.bounces));b.bounces++;b.nextBounce=b.age+.26+b.bounces*.09;}}
-balls=balls.filter(b=>b.age<4&&b.bounces<6);if(!debug.hidden)debug.textContent=`round ${round} · duck ${duck?duck.direction.name:'none'} · distance ${duck?duck.distance.toFixed(1):'—'}m · ${duck?duck.mode:'waiting'} · balls ${balls.length}`;}}requestAnimationFrame(tick);}
+balls=balls.filter(b=>b.age<4&&b.bounces<6);renderDebug();}}requestAnimationFrame(tick);}
 button.addEventListener('click',async()=>{if(!ctx)init();await ctx.resume();if(gameOver){gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=ctx.currentTime+.3;status.textContent='Listen for a duck…';});
-window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')debug.hidden=!debug.hidden;if(e.code==='Space'&&ctx&&!gameOver){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
+window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
 requestAnimationFrame(t=>{last=t;requestAnimationFrame(tick);});
+const debugToggle=$('#debugToggle'),radar=$('#radar'),telemetry=$('#telemetry'),radarCtx=radar.getContext('2d');
+function toggleDebug(){debug.hidden=!debug.hidden;debugToggle.textContent=debug.hidden?'Show debug radar (D)':'Hide debug radar (D)';debugToggle.setAttribute('aria-pressed',String(!debug.hidden));if(!debug.hidden)renderDebug();}
+debugToggle.addEventListener('click',toggleDebug);
+function renderDebug(){
+ if(debug.hidden)return;
+ const c=radarCtx,w=radar.width,h=radar.height,cx=w/2,cy=h/2,scale=12,limit=13;
+ c.clearRect(0,0,w,h);c.fillStyle='#101b19';c.fillRect(0,0,w,h);
+ c.strokeStyle='#345345';c.lineWidth=1;
+ for(const m of [5,10,13]){c.beginPath();c.arc(cx,cy,m*scale,0,Math.PI*2);c.stroke();c.fillStyle='#789e87';c.font='11px monospace';c.fillText(m+'m',cx+4,cy-m*scale+12);}
+ c.beginPath();c.moveTo(cx,8);c.lineTo(cx,h-8);c.moveTo(8,cy);c.lineTo(w-8,cy);c.stroke();
+ c.fillStyle='#a3b8aa';c.font='bold 12px monospace';c.textAlign='center';
+ c.fillText('FRONT ↑',cx,16);c.fillText('BACK ↓',cx,h-6);c.fillText('LEFT',24,cy-8);c.fillText('RIGHT',w-25,cy-8);
+ c.fillStyle='#e3f2e4';c.beginPath();c.arc(cx,cy,7,0,Math.PI*2);c.fill();c.fillStyle='#0b1510';c.font='bold 10px monospace';c.fillText('YOU',cx,cy-13);
+ const point=(d,dist)=>({x:cx+d.x*Math.min(dist,limit)*scale,y:cy+d.z*Math.min(dist,limit)*scale});
+ if(duck){const p=point(duck.direction,duck.distance);c.fillStyle=duck.mode==='chase'||duck.mode==='tickle'?'#ff8e83':duck.mode==='retreat'?'#b5d8a6':'#ffd77e';c.beginPath();c.arc(p.x,p.y,10,0,Math.PI*2);c.fill();c.fillStyle='#e5f2e7';c.font='12px monospace';c.fillText('DUCK',p.x,p.y-15);}
+ for(const b of balls){const p=point(b.d,b.distance);c.fillStyle='#8bd8f4';c.beginPath();c.arc(p.x,p.y,5,0,Math.PI*2);c.fill();}
+ c.textAlign='left';
+ telemetry.textContent='STATE: '+(!ctx?'not started':gameOver?'game over':playing?'running':'paused')+'\nROUND: '+round+'   SCORE: '+score+'\nDUCK: '+(duck?duck.direction.name.toUpperCase()+' · '+duck.distance.toFixed(2)+' m · '+duck.mode:'waiting')+'\nBALLS: '+balls.length+'   AUDIO: '+(ctx?ctx.state:'off')+'\nHRTF: Web Audio PannerNode\nKEYS: arrows=throw · D=toggle · Space=pause';
+}
+renderDebug();
