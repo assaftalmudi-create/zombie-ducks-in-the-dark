@@ -21,7 +21,7 @@ async function loadGameAudio(){
   }),
   loadAudioFile('Ball_Bounce.wav').then(buffer=>{ballBounce=buffer;}),
   loadAudioFile('Fuki_Night.mp3').then(buffer=>{swampBed=buffer;}),
-  loadAudioFile('Opening_Voice.mp3?v=0.40').then(buffer=>{openingVoice=buffer;})
+  loadAudioFile('Opening_Voice.mp3?v=0.42').then(buffer=>{openingVoice=buffer;})
  ]);
 }
 function stopRecordedDuck(){if(recordedDuckSource){try{recordedDuckSource.stop();}catch(e){}recordedDuckSource.disconnect();recordedDuckSource=null;}if(recordedDuckGain){recordedDuckGain.disconnect();recordedDuckGain=null;}}
@@ -322,7 +322,7 @@ function spawnGap(){
 function spawn(){const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;duck.recorded=!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.41',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.42',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
