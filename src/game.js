@@ -101,7 +101,7 @@ function spawnGap(){return Math.max(.35,1.5-Math.max(0,round-1)*.085);}
 function spawn(){const d=directions[Math.floor(Math.random()*4)];duck={direction:d,voice:duckVoices[Math.floor(Math.random()*duckVoices.length)],distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:5.8};round++;logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent='A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.22',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.23',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -150,13 +150,17 @@ for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.
 balls=balls.filter(b=>b.age<4&&b.bounces<6);if(duck&&duck.mode==='approach'&&duck.distance<=1.36){duck.mode='tickle';tickleUntil=t+2.15;tickleNext=t;logEvent('TICKLE_REACHED_PLAYER',{direction:duck.direction.name});status.textContent='OH NO. TICKLES!';}renderDebug();}}}catch(error){const message=String(error&&error.stack||error);console.error('Duck game loop error',error);lastEvent='ERROR '+message;eventLog.push({time:new Date().toISOString(),round,kind:'RUNTIME_ERROR',message});status.textContent='Game error — open debug and download log';debug.hidden=false;debugToggle.textContent='Hide debug radar (D)';try{renderDebug()}catch(e){telemetry.textContent=message;}}finally{requestAnimationFrame(tick);}}
 button.addEventListener('click',async()=>{if(!ctx)init();await ctx.resume();if(gameOver){logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;scoreEl.textContent='Ducks startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=ctx.currentTime+.3;status.textContent='Listen for a duck…';});
 window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver){playing=!playing;if(playing)await ctx.resume();else await ctx.suspend();status.textContent=playing?'Listen for a duck…':'Paused';}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
-// Touch and mouse buttons use the same throw path as keyboard arrows.
+// Native click works on touchscreens, trackpads and mouse; no pointer-only dependency.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
- control.addEventListener('pointerdown',e=>{
-  e.preventDefault();
-  if(!playing||!ctx||ctx.state!=='running')return;
+ control.addEventListener('click',async()=>{
   const d=directions.find(item=>item.name===control.dataset.direction);
-  if(d)throwBall(d);
+  if(!d)return;
+  if(!ctx||!playing){status.textContent='Tap PLAY GAME first.';return;}
+  if(ctx.state==='suspended')await ctx.resume();
+  if(gameOver){status.textContent='Game over — tap Play again.';return;}
+  if(!duck){status.textContent='Listening… wait for the next duck.';return;}
+  if(duck.mode!=='approach'){status.textContent='The duck is '+duck.mode+' — wait for the next round.';return;}
+  throwBall(d);
  });
 });
 requestAnimationFrame(t=>{last=t;requestAnimationFrame(tick);});
