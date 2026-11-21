@@ -120,7 +120,7 @@ function throwBall(d){
  if(d!==duck.direction){ball.active=false;duck.mode='chase';duck.nextQuack=ctx.currentTime+.08;logEvent('MISS_WRONG_DIRECTION',{ball:ball.id,thrown:d.name,duck:duck.direction.name});status.textContent='Miss! The duck is coming to TICKLE you!';}
 }
 function hitDuck(ball,t){
- duck.mode='retreat';duck.nextQuack=t+.12;score++;scoreEl.textContent='Ducks startled: '+score;
+ duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.12;score++;scoreEl.textContent='Ducks startled: '+score;
  status.textContent='BOINK! Duck startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  pos(ball.p,ball.d.x*duck.distance,0,ball.d.z*duck.distance);sound('hit',t,ball.p,.62);
  ball.age=999;ball.bounces=99;ball.active=false;
