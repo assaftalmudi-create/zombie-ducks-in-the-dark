@@ -162,7 +162,8 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
   return;
  }
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?rand(.34,.47)*voice.tempo:type==='water'?.24:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
+ const impactDuration=type==='firstHit' ? .15 : .48;
+ const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:(type==='hit'||type==='firstHit')?impactDuration:type==='tickle'?rand(.34,.47)*voice.tempo:type==='water'?.24:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
  let phase=0,subPhase=0;let noiseState=0,noiseFast=0;
  const soft=(x)=>Math.max(0,Math.min(1,x));
@@ -237,7 +238,7 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    const slap=Math.exp(-t*145)*.58*noiseFast;
    const spring=Math.exp(-t*24)*(.48*Math.sin(phase)+.12*Math.sin(subPhase));
    v=slap+spring;
-  }else if(type==='hit'){
+  }else if(type==='hit'||type==='firstHit'){
    // The slap lands first, followed by a low rubber thump and a rising squeak.
    f=135+220*Math.exp(-t*42)+290*bell(u,.07,.68);
    noiseFast=.42*noiseFast+.58*(Math.random()*2-1);
@@ -555,7 +556,7 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.58',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.59',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach'||duck.ballThrown)return;
@@ -632,22 +633,30 @@ function playRecordedRetreat(buffer,voice,direction,at){
  source.start(at,buffer.duration-duration,duration);
 }
 function hitDuck(ball,t){
+ const firstHit=score===0;
+ // On the first hit the short slap ends before the duck answers.
+ const replyAt=t+(firstHit ? .255 : .045);
+ const retreatAt=replyAt+.52/duck.voice.quackRate+.045;
  const introducesLevel=round===groundRounds || round===monkeyRound || round===finalRound;
  nextDuckAt=Math.max(t+spawnGap(),duck.hintUntil||0,introducesLevel?t+1.15:t);
+ if(firstHit)nextDuckAt=Math.max(nextDuckAt,retreatAt);
  const retreatBuffer=duck.recorded?recordedDucks[duck.direction.name]:null;
- duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.09+.52/duck.voice.quackRate;score++;updateScore();
+ duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=retreatAt;
+ if(firstHit)duck.nextStep=retreatAt;
+ score++;updateScore();
  status.textContent=duck.voice.monkey?'The monkey has a few words for you.':duck.voice.wingbeat?'A honk of protest overhead.':'One very offended duck.';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  const impactDistance=Math.min(duck.distance,3.5);
  pos(ball.p,ball.d.x*impactDistance,duck.voice.wingbeat?3.6:0,ball.d.z*impactDistance);
- sound('hit',t,ball.p,1.25);
- sound('yelp',t+.045,ball.p,1.35,duck.voice);
+ sound(firstHit?'firstHit':'hit',t,ball.p,1.25);
+ sound('yelp',replyAt,ball.p,1.35,duck.voice);
  if(retreatBuffer){
   // Two wet footfalls trail the same voice away from the listener.
-  for(const [delay,distance,volume] of [[.27,1.7,.14],[.53,3.5,.10]]){
+  const firstStepAt=firstHit ? retreatAt+.07 : t+.27;
+  for(const [delay,distance,volume] of [[0,1.7,.14],[.26,3.5,.10]]){
    const ripple=panner();
    pos(ripple,duck.direction.x*distance,-.55,duck.direction.z*distance);
    ripple.connect(master);
-   const plip=sound('water',t+delay,ripple,volume);
+   const plip=sound('water',firstStepAt+delay,ripple,volume);
    plip.addEventListener('ended',()=>ripple.disconnect());
   }
   playRecordedRetreat(retreatBuffer,duck.voice,duck.direction,duck.nextQuack);
