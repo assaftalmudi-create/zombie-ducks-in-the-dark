@@ -1,21 +1,21 @@
 const $=s=>document.querySelector(s),button=$('#start'),status=$('#status'),debug=$('#debug'),scoreEl=$('#score');
 const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,key:'ArrowRight'},{name:'left',x:-1,z:0,key:'ArrowLeft'}];
-let statusBeforePause;
+let statusBeforePause,lightsOutAt=Infinity;
 const startingLives=3;
 let lives=startingLives,gameOver=false,replayAt=Infinity;
 const guidedDucks=directions.length;
 let remainingGuideDirections=[];
 let guideFinished=false;
 const directionHints={
- left:{file:'Hint_Left',line:'Here it comes, from the left.'},
- right:{file:'Hint_Right',line:'Over on your right.'},
- front:{file:'Hint_Front',line:'This one’s straight ahead.'}
+ left:{file:'Hint_Left',line:'Left. Hear that waddle?'},
+ right:{file:'Hint_Right',line:'Right. Trying to tiptoe.'},
+ front:{file:'Hint_Front',line:'Straight ahead. Bold little duck.'}
 };
 const story={
- opening:{file:'Opening_Voice',line:'When you close your eyes, the ducks appear. Listen for the feet. Throw your ball where you hear them.'},
- geese:{file:'Flight_Voice',line:'Well done, little warrior. Now look out for the flying junkie geese.'},
- monkeys:{file:'Monkey_Voice',line:'Ah. The unemployed monkeys. They have all day.'},
- solo:{file:'On_Your_Own',line:'Now you’re on your own.'},
+ opening:{file:'Opening_Voice',line:'When you close your eyes, the ducks appear. Listen for the feet. Where they waddle, throw your ball. You have only one bouncy ball for each animal. Don’t waste it.'},
+ geese:{file:'Flight_Voice',line:'Well done, little warrior. Now look out for the flying junkie geese. Elegant birds. Until they speak.'},
+ monkeys:{file:'Monkey_Voice',line:'Ah, the unemployed monkeys. Busy, they look. Employed? No.'},
+ solo:{file:'On_Your_Own',line:'Now you’re on your own. Supervising, I am.'},
  tickles:{file:'Tickles',line:'Here come the tickles!'},
  two:{file:'Two_Lives',line:'You have two lives left, little warrior.'},
  one:{file:'One_Life',line:'You have one life left, little warrior.'},
@@ -24,7 +24,7 @@ const story={
 };
 function narrate(t,cue){
  status.textContent=cue.line;
- return playNarration(t,cue.buffer);
+ return playNarration(t,cue.buffer,null,cue===story.opening);
 }
 function updateScore(){
  scoreEl.textContent='Animals startled: '+score+' · Lives: '+lives;
@@ -45,7 +45,7 @@ async function loadAudioFile(file){
 }
 async function loadGameAudio(){
  await Promise.all([
-  ...[...Object.values(story),...Object.values(directionHints)].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.56');}),
+  ...[...Object.values(story),...Object.values(directionHints)].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.57');}),
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file.replace('.wav','.mp3'))||await loadAudioFile(file);
   }),
@@ -401,8 +401,9 @@ function playSingingBowl(at,treatAsCue=false){
  nextBowlAt=onset+rand(21,38);
  return onset;
 }
-function playNarration(t,buffer,direction=null){
+function playNarration(t,buffer,direction=null,opening=false){
  const at=playSingingBowl(t,true)+.8;
+ if(opening)lightsOutAt=at;
  if(!buffer)return at+.15;
  const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
  if(direction){
@@ -526,10 +527,11 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.56',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.57',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
- if(gameOver||!duck||duck.mode!=='approach')return;
+ if(gameOver||!duck||duck.mode!=='approach'||duck.ballThrown)return;
+ duck.ballThrown=true;
  const p=panner();p.connect(master);p.connect(roomSend);
  const ball={id:++throwCounter,p,d,distance:0,age:0,lastBounce:0,nextBounce:.24,bounces:0,active:true};
  balls.push(ball);pos(p,d.x*.8,.1,d.z*.8);sound('throw',ctx.currentTime,p,.42);
@@ -566,6 +568,8 @@ function startTickle(t){
  duck.tickleUntil=Math.max(duck.tickleUntil+.08,warningEnd);
 }
 function endGame(t,cue,event){
+ lightsOutAt=Infinity;
+ document.body.classList.remove('night-listening');
  duck=null;
  gameOver=true;
  replayAt=narrate(t,cue);
@@ -619,7 +623,12 @@ function hitDuck(ball,t){
  }
  ball.age=999;ball.bounces=99;ball.active=false;
 }
-function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;updateNightAmbience(t);if(gameOver&&t>=replayAt){button.disabled=false;button.textContent='Play again';replayAt=Infinity;}if(!gameOver){if((!duck||duck.mode==='retreat')&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6*duck.voice.walkRate);if(duck.distance<=.68){startTickle(t);}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed*duck.voice.walkRate;
+function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playing&&ctx){const t=ctx.currentTime;
+ if(t>=lightsOutAt){
+  document.body.classList.add('night-listening');
+  lightsOutAt=Infinity;
+ }
+ updateNightAmbience(t);if(gameOver&&t>=replayAt){button.disabled=false;button.textContent='Play again';replayAt=Infinity;}if(!gameOver){if((!duck||duck.mode==='retreat')&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6*duck.voice.walkRate);if(duck.distance<=.68){startTickle(t);}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed*duck.voice.walkRate;
 const flying=Boolean(duck.voice.wingbeat);
 const flightHeight=2.7+.65*Math.sin(t*2.1);
 pos(duckPanner,duck.direction.x*duck.distance,flying?flightHeight:-.32,duck.direction.z*duck.distance);
