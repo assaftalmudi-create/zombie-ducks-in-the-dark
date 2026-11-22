@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s),button=$('#start'),status=$('#status'),debu
 const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,key:'ArrowRight'},{name:'left',x:-1,z:0,key:'ArrowLeft'}];
 let statusBeforePause;
 const startingLives=3;
-let lives=startingLives,gameOver=false,replayAt=Infinity,ticklePanner;
+let lives=startingLives,gameOver=false,replayAt=Infinity;
 const guidedDucks=directions.length;
 let remainingGuideDirections=[];
 let guideFinished=false;
@@ -133,7 +133,7 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
   return;
  }
  const isDuck=type==='quack'||type==='retreat';
- const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?rand(.34,.47):type==='water'?.24:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
+ const dur=isDuck?(.46*voice.tempo):(type==='throw'?.13:type==='yelp'?.52/voice.quackRate:type==='hit'?.48:type==='tickle'?rand(.34,.47)*voice.tempo:type==='water'?.24:type==='wingbeat'?.105:type==='footstep'?.135:type==='bounce'?.19:.31);
  const buf=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*dur),ctx.sampleRate),data=buf.getChannelData(0);
  let phase=0,subPhase=0;let noiseState=0,noiseFast=0;
  const soft=(x)=>Math.max(0,Math.min(1,x));
@@ -204,16 +204,32 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
    const squeak=bell(u,.055,.72)*(.45*Math.sin(subPhase)+.12*Math.sin(subPhase*2));
    v=smack+thump+squeak;
   }else if(type==='tickle'){
-   // A double feather stroke, a caught breath, then two little voiced hiccups.
    const grain=Math.random()*2-1;
    noiseFast+=.38*(grain-noiseFast);
    noiseState+=.065*(noiseFast-noiseState);
-   const brush=bell(u,0,.43)+.63*bell(u,.25,.62);
-   const giggle=.72*bell(u,.43,.63)+bell(u,.68,.91);
-   f=(215+145*giggle+35*Math.sin(2*Math.PI*u))*variation;
-   const cheek=.46*Math.sin(phase)+.17*Math.sin(2*phase)+.08*Math.sin(3*phase);
-   v=brush*(noiseFast-noiseState)*(.51+.18*Math.sin(2*Math.PI*31*t))+
-     giggle*(cheek+.22*noiseFast)+.22*bell(u,.58,.78)*noiseState;
+   const rustle=noiseFast-noiseState;
+   if(voice.monkey){
+    // Three fingertip taps, with a chattering little chuckle between them.
+    const taps=bell(u,0,.12)+.8*bell(u,.16,.29)+.65*bell(u,.34,.47);
+    const laugh=bell(u,.24,.49)+.8*bell(u,.52,.76)+.5*bell(u,.79,.98);
+    f=voice.base*(1.25+.85*laugh)*voice.quackRate*variation;
+    v=taps*(.74*rustle+.30*Math.sin(phase))+
+      laugh*(.35*Math.sin(phase)+.14*Math.sin(phase*3)+.12*noiseFast);
+   }else if(voice.wingbeat){
+    // A broad wing sweep with a breathy, pinched double honk.
+    const sweep=bell(u,0,.63)+.56*bell(u,.49,.99);
+    const honk=bell(u,.18,.43)+.72*bell(u,.56,.81);
+    f=voice.base*(.68+.23*honk-.15*u)*variation;
+    v=sweep*(.88*rustle+.38*noiseState)+honk*(.27*Math.sin(phase)+.19*Math.sin(3*phase));
+   }else{
+    // A damp feather brushing the cheek, followed by a swallowed quack.
+    const brush=bell(u,0,.43)+.63*bell(u,.25,.62);
+    const giggle=.72*bell(u,.43,.63)+bell(u,.68,.91);
+    f=voice.base*(.93+.54*giggle+.12*Math.sin(2*Math.PI*u))*variation;
+    const cheek=.46*Math.sin(phase)+.17*Math.sin(2*phase)+.08*Math.sin(3*phase);
+    v=brush*rustle*(.51+.18*Math.sin(2*Math.PI*voice.wobble*t))+
+      giggle*(cheek+.22*noiseFast)+.22*bell(u,.58,.78)*noiseState;
+   }
   }
   phase+=2*Math.PI*f/ctx.sampleRate;
   subPhase+=2*Math.PI*f*((isDuck||type==='yelp')?voice.formant:1.52)/ctx.sampleRate;
@@ -226,9 +242,9 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
  src.connect(gain).connect(p);
  src.start(Math.max(at,ctx.currentTime));
  src.onended=()=>{src.disconnect();gain.disconnect();};
+ return src;
 }
 function init(){const Audio=window.AudioContext||window.webkitAudioContext;try{ctx=new Audio({sampleRate:48000,latencyHint:'interactive'});}catch(e){ctx=new Audio();}master=ctx.createGain();master.gain.value=.37;const limiter=ctx.createDynamicsCompressor();limiter.threshold.value=-8;limiter.knee.value=6;limiter.ratio.value=3;limiter.attack.value=.004;limiter.release.value=.16;master.connect(limiter).connect(ctx.destination);
-ticklePanner=panner();ticklePanner.connect(master);
 const impulse=ctx.createBuffer(2,Math.floor(ctx.sampleRate*.38),ctx.sampleRate);for(let c=0;c<2;c++){const a=impulse.getChannelData(c);for(let i=0;i<a.length;i++)a[i]=(Math.random()*2-1)*Math.exp(-i/ctx.sampleRate*15)*.12;}const verb=ctx.createConvolver();verb.buffer=impulse;roomSend=ctx.createGain();roomSend.gain.value=.16;roomSend.connect(verb).connect(master);
 // Short, asymmetrical wall reflections give the empty room a sense of size.
 for(const [delayTime,pan,level] of [[.037,-.72,.16],[.061,.65,.12],[.104,-.25,.08]]){
@@ -454,7 +470,7 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.54',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.55',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -472,11 +488,26 @@ function startChase(t){
  duck.nextQuack=t+.08;
 }
 function startTickle(t){
+ duck.mode='tickle';
+ const {direction,voice}=duck;
+ const spacing=(voice.monkey?.27:voice.wingbeat?.42:.35)*voice.tempo;
+ let at=t;
+ for(let stroke=0;stroke<4;stroke++){
+  const brush=panner();
+  const side=stroke%2===0?1:-1;
+  const x=stroke===0?direction.x*.55:side*(direction.x||1)*rand(.30,.52);
+  const z=stroke===0?direction.z*.55:-.26;
+  pos(brush,x,voice.wingbeat?.34:.02,z);
+  brush.connect(master);
+  const source=sound('tickle',at,brush,.66,voice);
+  source.addEventListener('ended',()=>brush.disconnect());
+  duck.tickleUntil=at+source.buffer.duration;
+  at+=spacing*rand(.92,1.08);
+ }
  stopRecordedDuck();
  duck.recorded=false;
- duck.mode='tickle';
- duck.stroke=0;
- duck.nextStroke=narrate(Math.max(t,duck.hintUntil||0),story.tickles)-.35;
+ const warningEnd=narrate(Math.max(t,duck.hintUntil||0),story.tickles);
+ duck.tickleUntil=Math.max(duck.tickleUntil+.08,warningEnd);
 }
 function endGame(t,cue,event){
  duck=null;
@@ -486,15 +517,7 @@ function endGame(t,cue,event){
  logEvent(event,{lives,score});
 }
 function updateTickle(t){
- if(t<duck.nextStroke)return;
- if(duck.stroke<4){
-  const side=(duck.stroke%2===0?1:-1)*(duck.direction.x||1);
-  pos(ticklePanner,side*rand(.34,.58),rand(-.10,.16),-.26);
-  sound('tickle',t,ticklePanner,.66,duck.voice);
-  duck.stroke++;
-  duck.nextStroke=t+(duck.stroke===4?.65:rand(.34,.49));
-  return;
- }
+ if(t<duck.tickleUntil)return;
  lives--;
  updateScore();
  logEvent('TICKLED',{lives});
