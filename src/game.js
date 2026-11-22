@@ -275,8 +275,9 @@ function updateSwamp(t){
   setTimeout(()=>drop.disconnect(),500);
  }
 }
-let nextBowlAt=0;
-function playSingingBowl(at){
+let nextBowlAt=0,lastBowlOnset=-Infinity;
+function playSingingBowl(at,treatAsCue=false){
+ if(treatAsCue && lastBowlOnset>=at-.08)return lastBowlOnset;
  const root=[146.83,164.81,196][Math.floor(rand(0,3))];
  const duration=rand(9,13),rate=ctx.sampleRate;
  const buffer=ctx.createBuffer(2,Math.ceil(duration*rate),rate);
@@ -298,11 +299,15 @@ function playSingingBowl(at){
  gain.gain.value=.028;
  source.connect(gain).connect(master);
  source.onended=()=>{source.disconnect();gain.disconnect();};
- source.start(at);
+ const onset=Math.max(at,ctx.currentTime+.025);
+ source.start(onset);
+ lastBowlOnset=onset;
+ nextBowlAt=onset+rand(21,38);
+ return onset;
 }
 function playNarration(t,buffer){
- const at=t+.35;
- if(!buffer)return t+.5;
+ const at=playSingingBowl(t,true)+.8;
+ if(!buffer)return at+.15;
  const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
  pos(location,-.62,.35,-1.35);
  if(location.positionX)location.positionX.setTargetAtTime(.58,at+.55,1.1);
@@ -316,10 +321,7 @@ function playNarration(t,buffer){
  return at+buffer.duration+.55;
 }
 function updateNightAmbience(t){
- if(t>=nextBowlAt){
-  playSingingBowl(t);
-  nextBowlAt=t+rand(21,38);
- }
+ if(t>=nextBowlAt)playSingingBowl(t);
  if(swampBed&&swampBed.duration>=24){
   updateSwamp(t);
   return;
@@ -406,7 +408,7 @@ function spawn(){
  status.textContent=animalFor(duck.voice).arrival;}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.50',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.51',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -497,7 +499,7 @@ if(!ctx){
  await loadGameAudio();
 }else{
  await ctx.resume();
-}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;lastDirection=null;directionStreak=0;scoreEl.textContent='Animals startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextBowlAt=ctx.currentTime;nextDuckAt=playNarration(ctx.currentTime,openingVoice);flightAnnounced=false;monkeysAnnounced=false;flightRounds=0;remainingVoices=[];lastVoice=undefined;status.textContent='When you close your eyes, the ducks appear.';});
+}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;lastDirection=null;directionStreak=0;scoreEl.textContent='Animals startled: 0';}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=playNarration(ctx.currentTime,openingVoice);flightAnnounced=false;monkeysAnnounced=false;flightRounds=0;remainingVoices=[];lastVoice=undefined;status.textContent='When you close your eyes, the ducks appear.';});
 window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing){status.textContent=statusBeforePause;await ctx.resume();}else{statusBeforePause=status.textContent;status.textContent='Paused';await ctx.suspend();}}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
 // Pointer presses throw immediately. Keyboard and assistive activation still use click.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
