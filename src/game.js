@@ -8,7 +8,7 @@ let remainingGuideDirections=[];
 let guideFinished=false;
 const directionHints={
  left:{file:'Hint_Left',line:"Here it comes from the left."},
- right:{file:'Hint_Right',line:"Right. Trying to tiptoe."},
+ right:{file:'Hint_Right',line:"a zombie duck on the right."},
  front:{file:'Hint_Front',line:"Straight ahead."}
 };
 const story={
@@ -45,7 +45,7 @@ async function loadAudioFile(file){
 }
 async function loadGameAudio(){
  await Promise.all([
-  ...[...Object.values(story),...Object.values(directionHints)].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.58');}),
+  ...[...Object.values(story),...Object.values(directionHints)].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.60');}),
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file.replace('.wav','.mp3'))||await loadAudioFile(file);
   }),
@@ -556,7 +556,7 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.59',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.60',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach'||duck.ballThrown)return;
@@ -614,9 +614,13 @@ function updateTickle(t){
  lives--;
  updateScore();
  logEvent('TICKLED',{lives});
- duck=null;
- if(!lives)endGame(t,story.goodnight,'GAME_OVER');
- else nextDuckAt=narrate(t,lives===2?story.two:story.one);
+ if(!lives){endGame(t,story.goodnight,'GAME_OVER');return;}
+ nextDuckAt=narrate(t,lives===2?story.two:story.one);
+ if(duck.voice.monkey){
+  duck.mode='retreat';
+  duck.nextStep=t;
+  duck.nextQuack=Infinity;
+ }else duck=null;
 }
 function playRecordedRetreat(buffer,voice,direction,at){
  const duration=Math.min(buffer.duration,1.15*voice.quackRate);
@@ -638,7 +642,7 @@ function hitDuck(ball,t){
  const replyAt=t+(firstHit ? .255 : .045);
  const retreatAt=replyAt+.52/duck.voice.quackRate+.045;
  const introducesLevel=round===groundRounds || round===monkeyRound || round===finalRound;
- nextDuckAt=Math.max(t+spawnGap(),duck.hintUntil||0,introducesLevel?t+1.15:t);
+ nextDuckAt=Math.max(duck.voice.monkey?t:t+spawnGap(),duck.hintUntil||0,introducesLevel?t+1.15:t);
  if(firstHit)nextDuckAt=Math.max(nextDuckAt,retreatAt);
  const retreatBuffer=duck.recorded?recordedDucks[duck.direction.name]:null;
  duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=retreatAt;
@@ -669,7 +673,7 @@ function tick(now){try{const dt=Math.min((now-last)/1000,.06);last=now;if(playin
   document.body.classList.add('night-listening');
   lightsOutAt=Infinity;
  }
- if(!gameOver || t<replayAt && Number.isFinite(replayAt))updateNightAmbience(t);if(gameOver&&t>=replayAt){button.disabled=false;button.textContent='Play again';replayAt=Infinity;}if(!gameOver){if((!duck||duck.mode==='retreat')&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6*duck.voice.walkRate);if(duck.distance<=.68){startTickle(t);}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed*duck.voice.walkRate;
+ if(!gameOver || t<replayAt && Number.isFinite(replayAt))updateNightAmbience(t);if(gameOver&&t>=replayAt){button.disabled=false;button.textContent='Play again';replayAt=Infinity;}if(!gameOver){if((!duck||(duck.mode==='retreat'&&!duck.voice.monkey))&&t>=nextDuckAt)spawn();const previousDuckDistance=duck?duck.distance:Infinity;if(duck){if(duck.mode==='approach'){duck.distance=Math.max(1.35,duck.distance-dt*approachSpeed());}else if(duck.mode==='chase'){duck.distance=Math.max(.65,duck.distance-dt*5.6*duck.voice.walkRate);if(duck.distance<=.68){startTickle(t);}}else if(duck.mode==='retreat')duck.distance+=dt*duck.escapeSpeed*duck.voice.walkRate;
 const flying=Boolean(duck.voice.wingbeat);
 // Settle lower as the goose closes the distance. The throw lane stays fixed.
 const flightHeight=1.65+.12*Math.min(10,duck.distance)+.34*Math.sin(t*2.1);
@@ -699,7 +703,16 @@ if(duck.mode==='approach'||duck.mode==='chase'||duck.mode==='retreat'){
 }
 duckFilter.frequency.setTargetAtTime(Math.max(900,(duck.direction.z>0?2350:duck.direction.z<0?9000:6000)/(1+duck.distance*.075)),t,.06);
 if(duck.mode==='tickle'){updateTickle(t);}else if(t>=duck.nextQuack){if(!duck.recorded)sound('quack',t+.01,duckFilter,duck.mode==='retreat'?.43:duck.mode==='chase'?.8:.68,duck.voice);duck.nextQuack=t+(duck.mode==='retreat'?.55:duck.mode==='chase'?rand(.22,.38):rand(.8,1.35))/duck.voice.quackRate;}
-if(duck&&duck.mode==='retreat'&&duck.distance>13){stopRecordedDuck();duck=null;if(!(guideFinished&&round===guidedDucks)&&!(flightAnnounced&&flightRounds===0)&&!(monkeysAnnounced&&round===monkeyRound))status.textContent='Listening…';}}
+if(duck&&duck.mode==='retreat'&&duck.distance>13){
+ const lifeCuePlaying=duck.voice.monkey && t<nextDuckAt && duck.nextQuack===Infinity;
+ if(duck.voice.monkey){
+  // Start the quiet interval when the monkey actually leaves the scene.
+  const quiet=round<finalRound ? rand(2.25,3.75) : .85;
+  nextDuckAt=Math.max(nextDuckAt,t+quiet);
+ }
+ stopRecordedDuck();duck=null;
+ if(!lifeCuePlaying&&!(guideFinished&&round===guidedDucks)&&!(flightAnnounced&&flightRounds===0)&&!(monkeysAnnounced&&round===monkeyRound))status.textContent='Listening…';
+}}
 for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.distance;b.distance+=dt*12.5;
  const bouncePhase=Math.min(1,(b.age-b.lastBounce)/(b.nextBounce-b.lastBounce));
  const height=1.55*Math.pow(.78,b.bounces)*Math.sin(Math.PI*bouncePhase);
