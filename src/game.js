@@ -3,7 +3,15 @@ const directions=[{name:'front',x:0,z:-1,key:'ArrowUp'},{name:'right',x:1,z:0,ke
 let statusBeforePause;
 const startingLives=3;
 let lives=startingLives,gameOver=false,replayAt=Infinity,ticklePanner;
+const guidedDucks=3;
+let guideFinished=false;
+const directionHints={
+ left:{file:'Hint_Left',line:'Here it comes, from the left.'},
+ right:{file:'Hint_Right',line:'Here it comes, from the right.'},
+ front:{file:'Hint_Front',line:'Here it comes, straight ahead.'}
+};
 const story={
+ solo:{file:'On_Your_Own',line:'Now you’re on your own.'},
  tickles:{file:'Tickles',line:'Here come the tickles!'},
  two:{file:'Two_Lives',line:'You have two lives left, little warrior.'},
  one:{file:'One_Life',line:'You have one life left, little warrior.'},
@@ -33,7 +41,7 @@ async function loadAudioFile(file){
 }
 async function loadGameAudio(){
  await Promise.all([
-  ...Object.values(story).map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3');}),
+  ...[...Object.values(story),...Object.values(directionHints)].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3');}),
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file);
   }),
@@ -326,12 +334,12 @@ function playSingingBowl(at,treatAsCue=false){
  nextBowlAt=onset+rand(21,38);
  return onset;
 }
-function playNarration(t,buffer){
+function playNarration(t,buffer,centered=false){
  const at=playSingingBowl(t,true)+.8;
  if(!buffer)return at+.15;
  const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
- pos(location,-.62,.35,-1.35);
- if(location.positionX)location.positionX.setTargetAtTime(.58,at+.55,1.1);
+ pos(location,centered?0:-.62,.35,-1.35);
+ if(!centered&&location.positionX)location.positionX.setTargetAtTime(.58,at+.55,1.1);
  level.gain.value=.72;
  voice.buffer=buffer;
  voice.connect(level).connect(location);
@@ -408,6 +416,11 @@ function spawn(){
   endGame(t,story.victory,'GAME_COMPLETE');
   return;
  }
+ if(round===guidedDucks&&!guideFinished){
+  guideFinished=true;
+  nextDuckAt=narrate(t,story.solo);
+  return;
+ }
  if(round>=groundRounds&&!flightAnnounced){
   flightAnnounced=true;
   nextDuckAt=playNarration(t,flightVoice);
@@ -421,10 +434,16 @@ function spawn(){
   return;
  }
  const d=nextDirection();duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:9.5};round++;duck.recorded=!duck.voice.monkey&&!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});if(round===monkeyRound+1)introduceMonkey(t);
- status.textContent=animalFor(duck.voice).arrival;}
+ status.textContent=animalFor(duck.voice).arrival;
+ if(round<=guidedDucks){
+  const hint=directionHints[d.name];
+  duck.hintUntil=playNarration(t,hint.buffer,true);
+  status.textContent+=' '+hint.line;
+ }
+}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.52',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.53',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -446,7 +465,7 @@ function startTickle(t){
  duck.recorded=false;
  duck.mode='tickle';
  duck.stroke=0;
- duck.nextStroke=narrate(t,story.tickles)-.35;
+ duck.nextStroke=narrate(Math.max(t,duck.hintUntil||0),story.tickles)-.35;
 }
 function endGame(t,cue,event){
  duck=null;
@@ -487,7 +506,7 @@ function playRecordedRetreat(buffer,voice,direction,at){
  source.start(at,buffer.duration-duration,duration);
 }
 function hitDuck(ball,t){
- nextDuckAt=t+spawnGap();
+ nextDuckAt=Math.max(t+spawnGap(),duck.hintUntil||0);
  const retreatBuffer=duck.recorded?recordedDucks[duck.direction.name]:null;
  duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.09+.52/duck.voice.quackRate;score++;updateScore();
  status.textContent='BOINK! '+animalFor(duck.voice).name+' startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
@@ -528,7 +547,7 @@ if((flying||!duck.recorded)&&(duck.mode==='approach'||duck.mode==='chase'||duck.
 }
 duckFilter.frequency.setTargetAtTime(Math.max(900,(duck.direction.z>0?2350:duck.direction.z<0?9000:6000)/(1+duck.distance*.075)),t,.06);
 if(duck.mode==='tickle'){updateTickle(t);}else if(t>=duck.nextQuack){if(!duck.recorded)sound('quack',t+.01,duckFilter,duck.mode==='retreat'?.43:duck.mode==='chase'?.8:.68,duck.voice);duck.nextQuack=t+(duck.mode==='retreat'?.55:duck.mode==='chase'?rand(.22,.38):rand(.8,1.35))/duck.voice.quackRate;}
-if(duck&&duck.mode==='retreat'&&duck.distance>13){stopRecordedDuck();duck=null;if(!(flightAnnounced&&flightRounds===0)&&!(monkeysAnnounced&&round===monkeyRound))status.textContent='Listening…';}}
+if(duck&&duck.mode==='retreat'&&duck.distance>13){stopRecordedDuck();duck=null;if(!(guideFinished&&round===guidedDucks)&&!(flightAnnounced&&flightRounds===0)&&!(monkeysAnnounced&&round===monkeyRound))status.textContent='Listening…';}}
 for(const b of balls){if(b.age>=999)continue;b.age+=dt;const previousDistance=b.distance;b.distance+=dt*12.5;
  const bouncePhase=Math.min(1,(b.age-b.lastBounce)/(b.nextBounce-b.lastBounce));
  const height=1.55*Math.pow(.78,b.bounces)*Math.sin(Math.PI*bouncePhase);
@@ -545,7 +564,7 @@ if(!ctx){
  await loadGameAudio();
 }else{
  await ctx.resume();
-}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;lastDirection=null;directionStreak=0;lives=startingLives;replayAt=Infinity;updateScore();}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=playNarration(ctx.currentTime,openingVoice);flightAnnounced=false;monkeysAnnounced=false;flightRounds=0;remainingVoices=[];lastVoice=undefined;status.textContent='When you close your eyes, the ducks appear.';});
+}if(gameOver){stopRecordedDuck();logEvent('RESTART');gameOver=false;duck=null;balls=[];score=0;round=0;lastDirection=null;directionStreak=0;lives=startingLives;replayAt=Infinity;updateScore();}playing=true;button.textContent='Audio running';button.disabled=true;nextDuckAt=playNarration(ctx.currentTime,openingVoice);guideFinished=false;flightAnnounced=false;monkeysAnnounced=false;flightRounds=0;remainingVoices=[];lastVoice=undefined;status.textContent='When you close your eyes, the ducks appear.';});
 window.addEventListener('keydown',async e=>{if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.repeat)return;if(e.code==='KeyD')toggleDebug();if(e.code==='Space'&&ctx&&!gameOver&&(playing||button.textContent==='Audio running')){playing=!playing;if(playing){status.textContent=statusBeforePause;await ctx.resume();}else{statusBeforePause=status.textContent;status.textContent='Paused';await ctx.suspend();}}const d=directions.find(x=>x.key===e.code);if(d&&playing)throwBall(d);});
 // Pointer presses throw immediately. Keyboard and assistive activation still use click.
 document.querySelectorAll('.touch-controls button[data-direction]').forEach(control=>{
