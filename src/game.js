@@ -92,7 +92,7 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
   const call=ctx.createBufferSource(),level=ctx.createGain();
   call.buffer=monkeyChatter;
   call.playbackRate.value=voice.quackRate*(type==='yelp'?1.22:rand(.96,1.04));
-  level.gain.value=volume;
+  level.gain.value=volume*2.5;
   call.connect(level).connect(p);
   call.onended=()=>{call.disconnect();level.disconnect();};
   call.start(Math.max(ctx.currentTime,at),voice.clipStart,voice.clipLength);
@@ -108,7 +108,11 @@ function sound(type,at,p,volume=1,voice=duckVoices[0]){
  for(let i=0;i<data.length;i++){
   const t=i/ctx.sampleRate,u=t/dur;
   let f=250,v=0;
-  if(isDuck){
+  if(voice.monkey&&(isDuck||type==='yelp')){
+   const chatter=Math.sin(Math.PI*u)**.65*(.25+.75*Math.sin(Math.PI*3*u)**2);
+   f=voice.base*(1.6+.95*Math.sin(2*Math.PI*u)+.12*Math.sin(2*Math.PI*5*u));
+   v=chatter*(.46*Math.sin(phase)+.20*Math.sin(phase*3));
+  }else if(isDuck){
    const first=bell(u,.015,.49),second=bell(u,.39,.98);
    const swoop=1+.31*Math.exp(-u*20)-.21*u+.085*Math.sin(u*voice.wobble);
    f=voice.base*swoop*variation*(type==='retreat'?1.28:1);
@@ -351,6 +355,14 @@ function spawnGap(){
  // A quick follow-up can arrive over the previous duck's swear.
  return Math.random()<.35 ? rand(.16,.48) : rand(.85,3.6);
 }
+function introduceMonkey(t){
+ const perch=panner();
+ pos(perch,duck.direction.x*2.2,1.3,duck.direction.z*2.2);
+ perch.connect(master);
+ sound('quack',t,perch,1,duck.voice);
+ duck.nextQuack=t+1.25;
+ setTimeout(()=>perch.disconnect(),2000);
+}
 function spawn(){
  const t=ctx.currentTime;
  if(round>=groundRounds&&!flightAnnounced){
@@ -365,10 +377,11 @@ function spawn(){
   nextDuckAt=playNarration(t,monkeyNarration);
   return;
  }
- const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:9.5};round++;duck.recorded=!duck.voice.monkey&&!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent=duck.voice.monkey?'The unemployed monkeys · Listen for the chatter…':currentRoster===flyingVoices&&flightRounds===1?'Level 2 · Listen above you…':'A duck is approaching…';}
+ const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:9.5};round++;duck.recorded=!duck.voice.monkey&&!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});if(round===monkeyRound+1)introduceMonkey(t);
+ status.textContent=duck.voice.monkey?'Level 3 · The Unemployed Monkeys · Listen for the chatter…':currentRoster===flyingVoices&&flightRounds===1?'Level 2 · Listen above you…':'A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.47',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.48',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
@@ -403,6 +416,7 @@ function hitDuck(ball,t){
  nextDuckAt=t+spawnGap();
  const retreatBuffer=duck.recorded?recordedDucks[duck.direction.name]:null;
  duck.mode='retreat';stopRecordedDuck();duck.recorded=false;duck.nextQuack=t+.09+.52/duck.voice.quackRate;score++;scoreEl.textContent='Animals startled: '+score;
+ if(score>=groundRounds&&score<monkeyRound)scoreEl.textContent+=' · Monkeys in '+(monkeyRound-score);
  status.textContent=duck.voice.monkey?'BOINK! Monkey startled!':'BOINK! Duck startled!';logEvent('HIT',{ball:ball.id,direction:ball.d.name,distance:duck.distance});
  const impactDistance=Math.min(duck.distance,3.5);
  pos(ball.p,ball.d.x*impactDistance,duck.voice.wingbeat?3.6:0,ball.d.z*impactDistance);
