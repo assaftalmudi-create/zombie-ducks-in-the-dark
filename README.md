@@ -9,3 +9,5 @@ The game plays the recordings in stereo at a speed that varies with each duck. E
 The ball bounce is a trimmed, filtered mono excerpt of [rubber ball boucing on wall OWI.wav](https://freesound.org/people/1skyland/sounds/543176/) by 1skyland, released under CC0.
 
 The binaural swamp bed was recorded in Fuki, Wakayama by [Robin Dupuy](https://robin-dupuy.com), via [Freesound](https://freesound.org/people/Robin_Dupuy/sounds/853181/) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). An excerpt was filtered, level-adjusted, encoded for the web, and crossfaded in game.
+
+Monkey calls are excerpts from [G12-21-Monkey Chattering.wav](https://freesound.org/people/craigsmith/sounds/437953/), digitized by Craig Smith and released under CC0.
