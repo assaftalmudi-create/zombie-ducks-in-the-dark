@@ -264,7 +264,7 @@ function playSingingBowl(at){
  }
  const source=ctx.createBufferSource(),gain=ctx.createGain();
  source.buffer=buffer;
- gain.gain.value=.014;
+ gain.gain.value=.028;
  source.connect(gain).connect(master);
  source.onended=()=>{source.disconnect();gain.disconnect();};
  source.start(at);
@@ -323,6 +323,12 @@ function updateNightAmbience(t){
 }
 function approachSpeed(){return Math.min(3.7,1.1+Math.max(0,round-1)*.19)*duck.voice.walkRate;}
 function spawnGap(){
+ if(currentRoster===flyingVoices){
+  // Leave silence after the goose has retreated, then tighten the gaps.
+  const retreatTime=(13-duck.distance)/(duck.escapeSpeed*duck.voice.walkRate);
+  const minimumQuiet=3.1-.6*(flightRounds-1);
+  return retreatTime+rand(minimumQuiet,minimumQuiet+1.5);
+ }
  // A quick follow-up can arrive over the previous duck's swear.
  return Math.random()<.35 ? rand(.16,.48) : rand(.85,3.6);
 }
@@ -337,7 +343,7 @@ function spawn(){
  const d=directions[Math.floor(Math.random()*directions.length)];duck={direction:d,voice:nextDuckVoice(),distance:10,mode:'approach',nextQuack:ctx.currentTime+.15,nextStep:ctx.currentTime+.12,stepCount:0,escapeSpeed:9.5};round++;duck.recorded=!duck.voice.wingbeat&&startRecordedDuck(d,(duck.distance-1.35)/approachSpeed(),duck.voice);logEvent('SPAWN',{direction:d.name,voice:duck.voice.name,distance:duck.distance,speed:approachSpeed()});status.textContent=currentRoster===flyingVoices&&flightRounds===1?'Level 2 · Listen above you…':'A duck is approaching…';}
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.45',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.46',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  if(gameOver||!duck||duck.mode!=='approach')return;
