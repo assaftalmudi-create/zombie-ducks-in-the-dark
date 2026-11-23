@@ -20,7 +20,7 @@ let pendingCoaching=null;
 const practicePraise=[
  {file:'Practice_Hit',line:"Good job. That will teach him."},
  {file:'Practice_Beak',line:"Right on the beak!"},
- {file:'Practice_Quack',line:"Well thrown. Such language, though."}
+ {file:'Practice_Quack',line:"Well thrown."}
 ];
 const story={
  finale:{file:'Final_Attack',line:"And now, the final attack. All three lousy creatures are back. Who’s next?"},
@@ -58,7 +58,7 @@ async function loadAudioFile(file){
 }
 async function loadGameAudio(){
  await Promise.all([
-  ...[...Object.values(story),...Object.values(directionHints),...Object.values(practiceMiss),...practicePraise].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.64');}),
+  ...[...Object.values(story),...Object.values(directionHints),...Object.values(practiceMiss),...practicePraise].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.65');}),
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file.replace('.wav','.mp3'))||await loadAudioFile(file);
   }),
@@ -349,9 +349,14 @@ function makeCreatureBus(){
  duckPanner.connect(duckRearSend).connect(duckRearDelay).connect(duckRearFilter).connect(master);
  return {duckPanner,duckFilter,duckDirect,duckRearSend,duckNotch,duckPresence,duckFrontReflection,duckBackReflection};
 }
-let landscape,windLevel,windTone,nextGustAt=0,nextInsectAt=0;
+let landscape,swampSpeechEQ,windLevel,windTone,nextGustAt=0,nextInsectAt=0;
 function startNightAmbience(){
- landscape=ctx.createGain();landscape.connect(master);
+ landscape=ctx.createGain();
+ swampSpeechEQ=ctx.createBiquadFilter();
+ swampSpeechEQ.type='peaking';
+ swampSpeechEQ.frequency.value=2200;
+ swampSpeechEQ.Q.value=.85;
+ landscape.connect(swampSpeechEQ).connect(master);
  const rate=ctx.sampleRate;
  const noise=ctx.createBuffer(2,rate*4,rate);
  for(let channel=0;channel<2;channel++){
@@ -396,11 +401,15 @@ function distantFrog(t){
  throat.start(t);throat.stop(end+.02);
  throat.onended=()=>{throat.disconnect();tone.disconnect();level.disconnect();bank.disconnect();};
 }
+// Equal-power envelopes keep the level steady across unrelated stereo excerpts.
+const swampFadeIn=Float32Array.from({length:33},(_,i)=>.24*Math.sin(i*Math.PI/64));
+const swampFadeOut=Float32Array.from(swampFadeIn).reverse();
 function updateSwamp(t){
  if(!nextFrogAt)nextFrogAt=t+rand(10,17);
  if(t>=nextFrogAt){distantFrog(t);nextFrogAt=t+rand(16,34);}
  // Crossfade different stretches of the original binaural stereo field.
- if(t>=nextSwampPhrase){
+ if(t+.12>=nextSwampPhrase){
+  const start=Math.max(t,nextSwampPhrase);
   const duration=rand(15,23),fade=3;
   const halfway=(swampBed.duration-duration)/2;
   const offset=lastSwampOffset===undefined||lastSwampOffset>=halfway
@@ -409,13 +418,11 @@ function updateSwamp(t){
   const source=ctx.createBufferSource(),gain=ctx.createGain();
   source.buffer=swampBed;
   source.connect(gain).connect(landscape);
-  gain.gain.setValueAtTime(0,t);
-  gain.gain.linearRampToValueAtTime(.24,t+fade);
-  gain.gain.setValueAtTime(.24,t+duration-fade);
-  gain.gain.linearRampToValueAtTime(0,t+duration);
+  gain.gain.setValueCurveAtTime(swampFadeIn,start,fade);
+  gain.gain.setValueCurveAtTime(swampFadeOut,start+duration-fade,fade);
   source.onended=()=>{source.disconnect();gain.disconnect();};
-  source.start(t,offset,duration);
-  nextSwampPhrase=t+duration-fade;
+  source.start(start,offset,duration);
+  nextSwampPhrase=start+duration-fade;
  }
  if(t>=nextWaterDrop){
   nextWaterDrop=t+rand(5,17);
@@ -456,17 +463,43 @@ function playSingingBowl(at,treatAsCue=false){
  nextBowlAt=onset+rand(21,38);
  return onset;
 }
+function moveNarrator(location,direction,at,duration){
+ const center=direction?Math.atan2(direction.x,-direction.z):-.06;
+ const sweep=(direction ? .13 : .21)*(Math.random()<.5?-1:1);
+ const radius=direction?1.32:1.12;
+ function positionAt(u){
+  const angle=center-sweep*Math.cos(Math.PI*u);
+  const lean=Math.sin(Math.PI*u);
+  const distance=radius-.13*lean;
+  return [Math.sin(angle)*distance,.06+.10*lean,-Math.cos(angle)*distance];
+ }
+ pos(location,...positionAt(0));
+ if(location.positionX){
+  const axes=[location.positionX,location.positionY,location.positionZ];
+  const segments=Math.max(12,Math.ceil(duration*6));
+  for(let i=0;i<=segments;i++){
+   const u=i/segments,point=positionAt(u);
+   for(let axis=0;axis<3;axis++){
+    if(i===0)axes[axis].setValueAtTime(point[axis],at);
+    else axes[axis].linearRampToValueAtTime(point[axis],at+duration*u);
+   }
+  }
+ }else{
+  // Older panners expose setPosition only. Follow the audio clock through pauses.
+  const follow=()=>{
+   const u=Math.min(1,Math.max(0,(ctx.currentTime-at)/duration));
+   pos(location,...positionAt(u));
+   if(u<1)requestAnimationFrame(follow);
+  };
+  requestAnimationFrame(follow);
+ }
+}
 function playNarration(t,buffer,direction=null,opening=false){
  const at=playSingingBowl(t,true)+.8;
  if(opening)lightsOutAt=at;
  if(!buffer)return at+.15;
  const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
- if(direction){
-  pos(location,direction.x*1.35,0,direction.z*1.35);
- }else{
-  // A fixed seat just in front of the listener leaves the sides to the animals.
-  pos(location,-.14,.08,-1.1);
- }
+ moveNarrator(location,direction,at,buffer.duration);
  level.gain.value=.90;
  voice.buffer=buffer;
  voice.connect(level).connect(location);
@@ -474,12 +507,15 @@ function playNarration(t,buffer,direction=null,opening=false){
  location.connect(roomSend);
  voice.onended=()=>{voice.disconnect();level.disconnect();location.disconnect();};
  if(landscape){
-  const bed=landscape.gain;
-  bed.cancelScheduledValues(at-.16);
-  bed.setValueAtTime(1,at-.16);
-  bed.linearRampToValueAtTime(.75,at);
-  bed.setValueAtTime(.75,at+buffer.duration);
-  bed.linearRampToValueAtTime(1,at+buffer.duration+.5);
+  // Leave the marsh audible around the guide. Make most of the space in the speech band.
+  for(const [param,rest,underVoice] of [[landscape.gain,1,.93],[swampSpeechEQ.gain,0,-2.6]]){
+   const attack=at-.16;
+   if(typeof param.cancelAndHoldAtTime==='function')param.cancelAndHoldAtTime(attack);
+   else {param.cancelScheduledValues(attack);param.setValueAtTime(rest,attack);}
+   param.linearRampToValueAtTime(underVoice,at);
+   param.setValueAtTime(underVoice,at+buffer.duration);
+   param.linearRampToValueAtTime(rest,at+buffer.duration+.5);
+  }
  }
  voice.start(at);
  return at+buffer.duration+.55;
@@ -608,7 +644,7 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.64',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.65',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  const target=duck;
