@@ -1,6 +1,6 @@
 # Zombie Ducks in the Dark
 
-A nighttime headphone game in four acts: eleven zombie ducks, eight flying junkie geese, five unemployed monkeys, and one final attack with all three species approaching together. In the finale each direction has one animal and one ball. Listen for an approach and throw toward it using the arrow keys or the three on-screen buttons. The first three ducks teach left, front, and right in a shuffled order. Pause with the on-screen button or the space bar.
+A nighttime headphone game in four acts: eleven zombie ducks, eight flying junkie geese, five unemployed monkeys, and eight final encounters with all three species in shuffled order. Each finale visitor gets the swamp to itself. Listen for an approach and throw toward it using the arrow keys or the three on-screen buttons. The first three ducks teach left, front, and right in a shuffled order. Pause with the on-screen button or the space bar.
 
 [Play the game](https://assaftalmudi-create.github.io/zombie-ducks-in-the-dark/) · [Hear a one-minute stereo recording of gameplay](https://assaftalmudi-create.github.io/zombie-ducks-in-the-dark/docs/headphone-preview.mp3)
 
