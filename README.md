@@ -14,4 +14,4 @@ The binaural swamp bed was recorded in Fuki, Wakayama by [Robin Dupuy](https://r
 
 Monkey calls are excerpts from [G12-21-Monkey Chattering.wav](https://freesound.org/people/craigsmith/sounds/437953/), digitized by Craig Smith and released under CC0.
 
-The guide uses the ElevenLabs Roger voice in a low, gentle speaking register throughout the game. Each cue is level-matched in mono before the game places it in the binaural scene. The linked stereo preview features the earlier narration.
+The guide is Roger (Eleven v4). All 19 cues come from one continuous, gently spoken take with stability and similarity set to 100%. One gain adjustment is applied across the performance before it is cut into mono cues for placement in the binaural scene. Use the closing “You did well” as the performance reference for pickups. The linked stereo preview features the earlier narration.
