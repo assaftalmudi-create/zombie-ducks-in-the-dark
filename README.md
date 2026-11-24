@@ -14,4 +14,4 @@ The binaural swamp bed was recorded in Fuki, Wakayama by [Robin Dupuy](https://r
 
 Monkey calls are excerpts from [G12-21-Monkey Chattering.wav](https://freesound.org/people/craigsmith/sounds/437953/), digitized by Craig Smith and released under CC0.
 
-The male narration was synthesized with Kokoro, edited phrase by phrase, and mastered in mono for placement in the game’s binaural scene. The preview is a stereo render of the game audio with a closing fade.
+The guide whispers throughout in the ElevenLabs Roger voice. Each cue is level-matched in mono before the game places it in the binaural scene. The linked stereo preview features the earlier narration.
