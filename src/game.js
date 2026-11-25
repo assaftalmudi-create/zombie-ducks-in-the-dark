@@ -36,7 +36,7 @@ const story={
 };
 function narrate(t,cue){
  status.textContent=cue.line;
- return playNarration(t,cue.buffer,null,cue===story.opening);
+ return playNarration(t,cue.buffer,null,{opening:cue===story.opening});
 }
 function updateScore(){
  scoreEl.textContent='Animals startled: '+score+' · Lives: '+lives;
@@ -58,7 +58,7 @@ async function loadAudioFile(file){
 }
 async function loadGameAudio(){
  await Promise.all([
-  ...[...Object.values(story),...Object.values(directionHints),...Object.values(practiceMiss),...practicePraise].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.69');}),
+  ...[...Object.values(story),...Object.values(directionHints),...Object.values(practiceMiss),...practicePraise].map(async cue=>{cue.buffer=await loadAudioFile(cue.file+'.mp3?v=0.70');}),
   ...Object.entries(recordedDuckFiles).map(async ([direction,file])=>{
    recordedDucks[direction]=await loadAudioFile(file.replace('.wav','.mp3'))||await loadAudioFile(file);
   }),
@@ -463,10 +463,9 @@ function playSingingBowl(at,treatAsCue=false){
  nextBowlAt=onset+rand(21,38);
  return onset;
 }
-function moveNarrator(location,direction,at,duration){
+function moveNarrator(location,direction,at,duration,radius=direction?1.32:1.12){
  const center=direction?Math.atan2(direction.x,-direction.z):-.06;
  const sweep=(direction ? .13 : .21)*(Math.random()<.5?-1:1);
- const radius=direction?1.32:1.12;
  function positionAt(u){
   const angle=center-sweep*Math.cos(Math.PI*u);
   const lean=Math.sin(Math.PI*u);
@@ -494,12 +493,12 @@ function moveNarrator(location,direction,at,duration){
   requestAnimationFrame(follow);
  }
 }
-function playNarration(t,buffer,direction=null,opening=false){
+function playNarration(t,buffer,direction=null,{opening=false,radius}={}){
  const at=playSingingBowl(t,true)+.8;
  if(opening)lightsOutAt=at;
  if(!buffer)return at+.15;
  const voice=ctx.createBufferSource(),level=ctx.createGain(),location=panner();
- moveNarrator(location,direction,at,buffer.duration);
+ moveNarrator(location,direction,at,buffer.duration,radius);
  level.gain.value=.90;
  voice.buffer=buffer;
  voice.connect(level).connect(location);
@@ -628,7 +627,8 @@ function spawn(){
  updateScore();
  if(round<=guidedDucks){
   const hint=directionHints[direction.name];
-  duck.hintUntil=playNarration(t,hint.buffer,direction);
+  // The guide calls from a few steps away, on the approaching duck’s side.
+  duck.hintUntil=playNarration(t,hint.buffer,direction,{radius:2.15});
   if(duck.recorded && hint.buffer){
    // Keep the feet audible under the guide, then bring this duck into focus.
    const gain=recordedDuckGain.gain;
@@ -644,7 +644,7 @@ function spawn(){
 }
 let lastEvent='No throws yet';const eventLog=[];let throwCounter=0;
 function logEvent(kind,details={}){const entry={time:new Date().toISOString(),round,kind,...details};eventLog.push(entry);if(eventLog.length>300)eventLog.shift();lastEvent=kind+' '+JSON.stringify(details);renderDebug();}
-function exportLog(){const payload={version:'0.69',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportLog(){const payload={version:'0.70',exportedAt:new Date().toISOString(),events:eventLog};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='zombie-ducks-debug-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#downloadLog').addEventListener('click',exportLog);
 function throwBall(d){
  const target=duck;
